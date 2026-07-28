@@ -1,0 +1,19 @@
+{
+  "name": "qk-photo-viewer",
+  "version": "0.1.0",
+  "description": "Fast keyboard-first burst photo culler. Point it at your SD card, rip through photos, reject the junk.",
+  "type": "module",
+  "bin": {
+    "qk": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "exiftool-vendored": "^28.5.0",
+    "sharp": "^0.33.5"
+  }
+}

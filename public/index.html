@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>qk</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23e05d3a'/><text x='8' y='12' font-size='10' font-weight='bold' text-anchor='middle' fill='white' font-family='sans-serif'>qk</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header id="topbar">
+    <div id="counter">–</div>
+    <div id="filename">loading…</div>
+    <div id="stats"></div>
+    <button id="commit-btn" title="Review &amp; empty _rejected">Commit</button>
+  </header>
+
+  <main id="stage">
+    <div id="viewer">
+      <img id="photo" alt="" draggable="false">
+      <video id="video" controls loop muted playsinline style="display:none"></video>
+      <div id="rejected-overlay" class="hidden">REJECTED<span>press U to restore</span></div>
+      <div id="exif-panel" class="hidden"></div>
+      <div id="flash"></div>
+    </div>
+    <div id="loading" class="hidden">…</div>
+  </main>
+
+  <footer id="filmstrip"></footer>
+
+  <div id="help" class="hidden">
+    <h2>qk shortcuts</h2>
+    <table>
+      <tr><td>→ / ←</td><td>next / previous</td></tr>
+      <tr><td>X, Delete, D</td><td>reject (moves to _rejected/ on card)</td></tr>
+      <tr><td>Space</td><td>keep &amp; advance</td></tr>
+      <tr><td>U</td><td>undo last reject</td></tr>
+      <tr><td>Z / click</td><td>zoom 100% (move mouse to pan)</td></tr>
+      <tr><td>I</td><td>camera info (EXIF)</td></tr>
+      <tr><td>J / K</td><td>jump to next / prev unreviewed</td></tr>
+      <tr><td>Home / End</td><td>first / last</td></tr>
+      <tr><td>?</td><td>this help</td></tr>
+    </table>
+    <p>Rejects are never deleted until you hit <b>Commit</b> and confirm.</p>
+  </div>
+
+  <div id="commit-modal" class="hidden">
+    <div class="modal-box">
+      <h2>Commit session</h2>
+      <p id="commit-summary"></p>
+      <div class="modal-actions">
+        <button id="commit-cancel">Keep culling</button>
+        <button id="commit-restore">Restore all rejects</button>
+        <button id="commit-delete" class="danger">Delete rejects permanently</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
