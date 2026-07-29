@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>QK</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div class="brand"><b>QK</b><span class="mock-chip hidden" id="mockChip">MOCK SHOOT</span></div>
+    <div class="path" id="pathLabel">—</div>
+    <span id="remoteChip">REMOTE · MacBook-Pro.local</span>
+    <div class="counter"><span id="pos">1</span> <span>/</span> <span id="total">0</span></div>
+    <span class="rej-chip empty" id="rejChip">0 rejected</span>
+    <button id="commitBtn" disabled>Commit rejects</button>
+    <button id="helpBtn" title="Shortcuts">?</button>
+  </header>
+
+  <main id="main">
+    <div id="stage"></div>
+    <div class="hud"><span id="fname">—</span><span class="pair-chip" id="pairChip">ARW +JPG</span></div>
+    <div id="zoomTag">1:1</div>
+    <div id="rejBadge">REJECT</div>
+    <button class="navbtn" id="prevBtn" aria-label="Previous">‹</button>
+    <button class="navbtn" id="nextBtn" aria-label="Next">›</button>
+    <div id="hintBar"><b>←</b> <b>→</b> navigate&nbsp;&nbsp;<b>X</b> reject&nbsp;&nbsp;<b>Z</b> 1:1 zoom&nbsp;&nbsp;<b>G</b> grid&nbsp;&nbsp;<b>?</b> help</div>
+
+    <div id="grid" class="overlay hidden"><div class="gwrap"></div></div>
+
+    <div id="help" class="overlay hidden">
+      <div class="sheet">
+        <h2>Shortcuts</h2><p>Culling is keyboard-first. Click anywhere first so keys register.</p>
+        <table>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Previous / next photo (hold to flip through a burst)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>Mark / unmark reject</td></tr>
+          <tr><td><kbd>Z</kbd> or click</td><td>Toggle 1:1 zoom — move mouse to pan, check focus</td></tr>
+          <tr><td><kbd>G</kbd></td><td>Grid overview</td></tr>
+          <tr><td><kbd>⌘</kbd><kbd>⏎</kbd></td><td>Commit rejects (move off the keeper list)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close overlays</td></tr>
+        </table>
+        <div class="row" style="margin-top:16px"><button id="helpClose">Close</button></div>
+      </div>
+    </div>
+
+    <div id="modal" class="overlay hidden">
+      <div class="sheet">
+        <h2 id="modalTitle">Move 0 photos to Trash</h2>
+        <p>Rejected pairs (ARW + JPG) move to the card's rejects folder — recoverable until you empty it. Keepers are untouched.</p>
+        <div class="strip" id="modalStrip"></div>
+        <div class="row"><button id="cancelCommit">Cancel</button><button id="confirmCommit">Move to Trash</button></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="mbar">
+    <button id="mRejBtn">✕ Reject</button>
+    <button id="mCommitBtn" disabled>Commit</button>
+  </div>
+
+  <footer id="strip"></footer>
+</div>
+<div id="toast"></div>
+
+<script src="js/mock-backend.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
