@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # release uploads
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: gofmt -l . && test -z "$(gofmt -l .)"
+      - run: go vet ./internal/...
+      - run: go test ./internal/...
+
+  build-macos:
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+      - name: Build universal .app (Intel + Apple Silicon)
+        run: wails build -platform darwin/universal
+      - name: Zip the app
+        run: ditto -c -k --keepParent build/bin/QK.app QK-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QK-macos
+          path: QK-macos.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: QK-macos.zip
+          generate_release_notes: true

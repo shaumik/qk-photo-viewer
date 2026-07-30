@@ -1,12 +1,17 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "qk",
-  "outputfilename": "qk",
+  "name": "QK",
+  "outputfilename": "QK",
   "frontend:install": "",
   "frontend:build": "",
   "frontend:dev:watcher": "",
   "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "shaumik"
+  },
+  "info": {
+    "productName": "QK",
+    "productVersion": "0.1.0",
+    "comments": "Burst photo culler"
   }
 }

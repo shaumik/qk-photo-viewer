@@ -49,6 +49,20 @@ WebSocket. Made for airplanes.
 - **Vanilla HTML/CSS/JS** frontend, shared verbatim between the desktop
   window and phone remote sessions
 
+## Install (macOS)
+
+No toolchain needed:
+
+1. Download `QK-macos.zip` from the latest
+   [release](../../releases) — or, between releases, from the newest
+   [Build workflow run](../../actions)'s artifacts.
+2. Unzip and drag `QK.app` into Applications.
+3. First launch only: **right-click the app → Open**. The app isn't
+   code-signed yet, so macOS shows a warning once; opening it this way
+   dismisses it permanently.
+
+The build is a universal binary — Intel and Apple Silicon Macs both work.
+
 ## Development
 
 ```sh
@@ -72,7 +86,9 @@ browser tab.
       filmstrip, LRU caches with in-flight dedupe, background prefetch
       ring, `/api/thumb` + `/api/preview` served through the Wails asset
       server, folder picker, and the frontend bridge wired in.
-- [ ] **3. File ops for real cards** — folder picker, macOS Trash
-      integration, SD-card edge cases (slow readers, card removal mid-cull).
-- [ ] **4. Package** — signed `.app` via GitHub Actions macOS runner.
+- [ ] **3. File ops for real cards** — macOS Trash integration, SD-card
+      edge cases (slow readers, card removal mid-cull).
+- [x] **4. Package** — universal `.app` built by GitHub Actions on every
+      push, attached to a GitHub Release on version tags. (Code signing /
+      notarization still open — needs an Apple Developer account.)
 - [ ] **5. Remote session** — LAN server, QR pairing, WebSocket sync.
