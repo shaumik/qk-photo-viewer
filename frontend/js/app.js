@@ -4,7 +4,6 @@
 'use strict';
 
 const backend = window.QKWailsBackend || window.QKMockBackend;
-const IMG_W = backend.w, IMG_H = backend.h;
 const coarse = matchMedia('(pointer:coarse)').matches;
 
 const $ = id => document.getElementById(id);
@@ -82,11 +81,12 @@ function setZoom(on) {
 }
 function pan(mx, my) {
   const c = stage.firstChild; if (!c || !zoomed) return;
+  const iw = c.naturalWidth || c.width, ih = c.naturalHeight || c.height;
   const r = stage.getBoundingClientRect();
   const rx = Math.min(1, Math.max(0, (mx - r.left) / r.width));
   const ry = Math.min(1, Math.max(0, (my - r.top) / r.height));
   c.style.transform =
-    `translate(${-rx * Math.max(0, IMG_W - r.width)}px,${-ry * Math.max(0, IMG_H - r.height)}px)`;
+    `translate(${-rx * Math.max(0, iw - r.width)}px,${-ry * Math.max(0, ih - r.height)}px)`;
 }
 stage.addEventListener('mousemove', e => { lastMX = e.clientX; lastMY = e.clientY; pan(e.clientX, e.clientY); });
 stage.addEventListener('click', () => { if (!coarse) setZoom(!zoomed); });
@@ -190,6 +190,12 @@ document.addEventListener('keydown', e => {
     '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
 
   const metas = await backend.open();
+  $('pathLabel').textContent = backend.label; // may only be known after open (folder picker)
+  if (!metas.length) {
+    $('fname').textContent = 'no photos found';
+    $('pairChip').classList.add('hidden');
+    return;
+  }
   photos = metas.map((m, i) => {
     const t = document.createElement('div'); t.className = 'thumb';
     t.innerHTML = `${m.burstStart && i ? '<span class="bstart"></span>' : ''}` +

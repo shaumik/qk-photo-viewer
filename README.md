@@ -67,8 +67,11 @@ browser tab.
 
 - [x] **1. UI + stack** — culling UI (desktop + touch), mock backend, Go
       library core: scan, RAW+JPEG pairing, commit-rejects. All tested.
-- [ ] **2. Image pipeline** — ARW embedded-preview extraction, thumbnail
-      service, prefetch ring in Go; wire the Wails backend into the UI.
+- [x] **2. Image pipeline** — TIFF/IFD walker extracts embedded JPEG
+      previews from ARW files (no RAW decode), EXIF thumbnails for the
+      filmstrip, LRU caches with in-flight dedupe, background prefetch
+      ring, `/api/thumb` + `/api/preview` served through the Wails asset
+      server, folder picker, and the frontend bridge wired in.
 - [ ] **3. File ops for real cards** — folder picker, macOS Trash
       integration, SD-card edge cases (slow readers, card removal mid-cull).
 - [ ] **4. Package** — signed `.app` via GitHub Actions macOS runner.

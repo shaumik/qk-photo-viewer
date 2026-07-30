@@ -19,7 +19,8 @@ func main() {
 		Width:  1280,
 		Height: 800,
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:  assets,
+			Handler: app.svc.Handler(), // /api/thumb/{id}, /api/preview/{id}
 		},
 		BackgroundColour: &options.RGBA{R: 14, G: 14, B: 16, A: 1},
 		OnStartup:        app.startup,
