@@ -1,6 +1,6 @@
 # QK — burst photo culler
 
-A fast, keyboard-first photo culler for macOS. Point it at your SD card,
+A fast, keyboard-first photo culler. Point it at your SD card,
 rip through a burst, kill the soft frames, commit the rejects. No import
 step, no catalog, no lag.
 
@@ -35,12 +35,15 @@ explicit confirm moves them — recoverable — off the keeper list.
 
 The app can serve the same UI over local Wi-Fi: scan a QR code on the
 laptop, cull from your phone's browser — swipe to flip, swipe up to reject,
-double-tap to zoom. No app install, no internet; state syncs live over a
+double-tap to zoom. Works with **any phone** (Android or iOS — it's just a
+web page, nothing to install), no internet needed; state syncs live over a
 WebSocket. Made for airplanes.
 
 ## Stack
 
-- **[Wails v2](https://wails.io)** — Go backend, macOS WebKit webview UI
+- **[Wails v2](https://wails.io)** — Go backend, native webview UI.
+  Primary target is macOS; the same codebase also builds native Windows
+  (WebView2) and Linux (WebKitGTK) apps
 - **Go** does everything performance-critical: folder scan, ARW embedded-
   preview extraction, the prefetch ring, file moves
 - **Vanilla HTML/CSS/JS** frontend, shared verbatim between the desktop
