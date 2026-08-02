@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/shaumik/qk-photo-viewer/internal/library"
@@ -138,16 +139,28 @@ func TestCommitMovesWholePairAndReports(t *testing.T) {
 	if len(res.MovedIDs) != 1 || res.MovedIDs[0] != "DSC00010" {
 		t.Errorf("MovedIDs = %v, want [DSC00010]", res.MovedIDs)
 	}
-	// Off macOS the trash is unsupported, so the fallback destination is used.
-	if res.Dest != library.RejectsDirName {
-		t.Errorf("Dest = %q, want %q", res.Dest, library.RejectsDirName)
-	}
 	if len(res.Errors) != 0 {
 		t.Errorf("unexpected errors: %v", res.Errors)
 	}
 	for _, f := range []string{"DSC00010.ARW", "DSC00010.JPG"} {
-		if _, err := os.Stat(filepath.Join(dir, library.RejectsDirName, f)); err != nil {
-			t.Errorf("%s should be in the rejects folder: %v", f, err)
+		if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) {
+			t.Errorf("%s should have left the shoot folder (err=%v)", f, err)
+		}
+	}
+	// Destination is platform-dependent: on macOS the real Trash works
+	// (files land in ~/.Trash for a temp dir); elsewhere it's the fallback.
+	if runtime.GOOS == "darwin" {
+		if res.Dest != "Trash" {
+			t.Errorf("Dest = %q, want Trash on macOS", res.Dest)
+		}
+	} else {
+		if res.Dest != library.RejectsDirName {
+			t.Errorf("Dest = %q, want %q", res.Dest, library.RejectsDirName)
+		}
+		for _, f := range []string{"DSC00010.ARW", "DSC00010.JPG"} {
+			if _, err := os.Stat(filepath.Join(dir, library.RejectsDirName, f)); err != nil {
+				t.Errorf("%s should be in the rejects folder: %v", f, err)
+			}
 		}
 	}
 	if code, _ := get(t, s, "/api/preview/DSC00010"); code != 404 {
