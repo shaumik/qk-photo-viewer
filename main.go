@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"io/fs"
 	"log"
 
 	"github.com/wailsapp/wails/v2"
@@ -13,14 +14,18 @@ import (
 var assets embed.FS
 
 func main() {
-	app := NewApp()
-	err := wails.Run(&options.App{
+	frontend, err := fs.Sub(assets, "frontend")
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := NewApp(frontend)
+	err = wails.Run(&options.App{
 		Title:  "QK",
 		Width:  1280,
 		Height: 800,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
-			Handler: app.svc.Handler(), // /api/thumb/{id}, /api/preview/{id}
+			Handler: app.svc.Handler(), // /api: images, state, actions, events
 		},
 		BackgroundColour: &options.RGBA{R: 14, G: 14, B: 16, A: 1},
 		OnStartup:        app.startup,

@@ -38,11 +38,20 @@ whatever moved moved, the rest stays listed and marked.
 
 ## Remote session (phone)
 
-The app can serve the same UI over local Wi-Fi: scan a QR code on the
-laptop, cull from your phone's browser — swipe to flip, swipe up to reject,
-double-tap to zoom. Works with **any phone** (Android or iOS — it's just a
-web page, nothing to install), no internet needed; state syncs live over a
-WebSocket. Made for airplanes.
+Hit **📱 Phone** in the app: it starts a LAN server and shows a QR code.
+Scan it with **any phone** (Android or iOS — it's just a web page, nothing
+to install) on the same Wi-Fi or hotspot, and cull from the phone: swipe to
+flip, swipe up to reject, double-tap to zoom. Reject marks and commits sync
+live between every screen (Server-Sent Events), the session is protected by
+a one-time token baked into the QR code, and no internet is involved
+anywhere. Made for airplanes.
+
+There's also a headless mode for any machine with Go:
+
+```sh
+go run ./cmd/qkserve /path/to/DCIM/100MSDCF   # prints the phone URL
+go run ./cmd/qkserve -demo                    # synthetic shoot, just to try it
+```
 
 ## Stack
 
@@ -100,4 +109,6 @@ browser tab.
 - [x] **4. Package** — universal `.app` built by GitHub Actions on every
       push, attached to a GitHub Release on version tags. (Code signing /
       notarization still open — needs an Apple Developer account.)
-- [ ] **5. Remote session** — LAN server, QR pairing, WebSocket sync.
+- [x] **5. Remote session** — token-gated LAN server with QR pairing,
+      live sync over Server-Sent Events, phone commits, `qkserve`
+      headless mode.

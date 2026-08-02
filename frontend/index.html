@@ -17,6 +17,7 @@
     <div class="counter"><span id="pos">1</span> <span>/</span> <span id="total">0</span></div>
     <span class="rej-chip empty" id="rejChip">0 rejected</span>
     <button id="commitBtn" disabled>Commit rejects</button>
+    <button id="remoteBtn" class="hidden" title="Cull from your phone">📱 Phone</button>
     <button id="helpBtn" title="Shortcuts">?</button>
   </header>
 
@@ -43,6 +44,20 @@
           <tr><td><kbd>Esc</kbd></td><td>Close overlays</td></tr>
         </table>
         <div class="row" style="margin-top:16px"><button id="helpClose">Close</button></div>
+      </div>
+    </div>
+
+    <div id="remoteSheet" class="overlay hidden">
+      <div class="sheet sheet-center">
+        <h2>Cull from your phone</h2>
+        <p>Scan with any phone on the same Wi-Fi or hotspot — marks sync
+           live between screens. No internet needed, nothing to install.</p>
+        <img id="qrImg" alt="QR code for the remote session" class="qr">
+        <p id="remoteUrl" class="remote-url"></p>
+        <div class="row row-center">
+          <button id="remoteStop">Stop session</button>
+          <button id="remoteClose">Close</button>
+        </div>
       </div>
     </div>
 
@@ -76,6 +91,7 @@
 <div id="toast"></div>
 
 <script src="js/mock-backend.js"></script>
+<script src="js/http-backend.js"></script>
 <script src="js/wails-backend.js"></script>
 <script src="js/app.js"></script>
 </body>

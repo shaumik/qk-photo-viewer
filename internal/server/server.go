@@ -1,11 +1,13 @@
 // Package server is the culling backend behind the UI: it owns the open
-// folder, serves thumbnails and previews over HTTP (the Wails asset server
-// on desktop; the same handler backs phone remote sessions in milestone 5),
-// and keeps a prefetch ring warm so the next frames are already in memory
-// when the user presses →.
+// folder and the reject marks (the single source of truth, so every
+// connected screen agrees), serves thumbnails and previews over HTTP, and
+// keeps a prefetch ring warm so the next frames are already in memory when
+// the user presses →. The same Handler backs the desktop webview's asset
+// server and phone remote sessions over the LAN.
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 	"github.com/shaumik/qk-photo-viewer/internal/library"
@@ -27,11 +30,12 @@ type PhotoDTO struct {
 	Pair string `json:"pair"`
 }
 
-// OpenResult describes an opened shoot folder.
+// OpenResult describes the open shoot folder and its current cull state.
 type OpenResult struct {
 	Dir      string     `json:"dir"`
 	ReadOnly bool       `json:"readOnly"` // e.g. the card's lock switch is on
 	Photos   []PhotoDTO `json:"photos"`
+	Rejected []string   `json:"rejected"` // IDs currently marked, so late joiners sync up
 }
 
 // CommitResult reports what a commit actually did. A commit is per-file and
@@ -43,18 +47,33 @@ type CommitResult struct {
 	Errors   []string `json:"errors"`
 }
 
+// Event is a state change broadcast to every connected screen — the desktop
+// webview and any phone remote sessions.
+type Event struct {
+	Type     string   `json:"type"` // "reject" | "commit" | "open"
+	ID       string   `json:"id,omitempty"`
+	Rejected bool     `json:"rejected,omitempty"`
+	MovedIDs []string `json:"movedIds,omitempty"`
+	Dest     string   `json:"dest,omitempty"`
+}
+
 const (
 	previewCacheSize = 24  // ~2–8 MB each: bounded well under typical RAM
 	thumbCacheSize   = 512 // tiny EXIF thumbnails
 	prefetchAhead    = 3   // frames warmed ahead of the one on screen
 	warmQueueSize    = 32
 	warmWorkers      = 2
+	ssePingInterval  = 25 * time.Second
 )
 
 type Service struct {
-	mu     sync.Mutex
-	dir    string
-	photos []library.Photo
+	mu       sync.Mutex
+	dir      string
+	readOnly bool
+	photos   []library.Photo
+	rejected map[string]bool
+	subs     map[chan Event]struct{}
+	notify   func(Event) // extra sink, e.g. Wails runtime events for the desktop webview
 
 	thumbs   *preview.Cache
 	previews *preview.Cache
@@ -63,6 +82,8 @@ type Service struct {
 
 func New() *Service {
 	s := &Service{
+		rejected: map[string]bool{},
+		subs:     map[chan Event]struct{}{},
 		thumbs:   preview.NewCache(thumbCacheSize),
 		previews: preview.NewCache(previewCacheSize),
 		warm:     make(chan string, warmQueueSize),
@@ -77,20 +98,106 @@ func New() *Service {
 	return s
 }
 
-// OpenFolder scans a shoot folder and makes it the active one.
+/* ---------- event fan-out ---------- */
+
+// Subscribe returns a channel of state changes and a cancel function.
+// Slow consumers never block the culler: sends are dropped when a
+// subscriber's buffer is full (SSE clients resync via /api/photos).
+func (s *Service) Subscribe() (<-chan Event, func()) {
+	ch := make(chan Event, 16)
+	s.mu.Lock()
+	s.subs[ch] = struct{}{}
+	s.mu.Unlock()
+	return ch, func() {
+		s.mu.Lock()
+		delete(s.subs, ch)
+		s.mu.Unlock()
+	}
+}
+
+// SetNotify installs an extra synchronous event sink (the desktop webview
+// bridge). Call before events start flowing.
+func (s *Service) SetNotify(fn func(Event)) {
+	s.mu.Lock()
+	s.notify = fn
+	s.mu.Unlock()
+}
+
+func (s *Service) emit(e Event) {
+	s.mu.Lock()
+	fn := s.notify
+	for ch := range s.subs {
+		select {
+		case ch <- e:
+		default:
+		}
+	}
+	s.mu.Unlock()
+	if fn != nil {
+		fn(e)
+	}
+}
+
+/* ---------- session state ---------- */
+
+// OpenFolder scans a shoot folder and makes it the active one. Reject
+// marks reset — it's a new session.
 func (s *Service) OpenFolder(dir string) (OpenResult, error) {
 	photos, err := library.Scan(dir)
 	if err != nil {
 		return OpenResult{}, err
 	}
-	res := OpenResult{Dir: dir, ReadOnly: isReadOnly(dir), Photos: make([]PhotoDTO, len(photos))}
-	for i, p := range photos {
-		res.Photos[i] = PhotoDTO{ID: p.ID, Name: filepath.Base(displayFile(p)), Pair: p.Pair()}
-	}
+	ro := isReadOnly(dir)
 	s.mu.Lock()
-	s.dir, s.photos = dir, photos
+	s.dir, s.photos, s.readOnly = dir, photos, ro
+	s.rejected = map[string]bool{}
+	res := s.stateLocked()
 	s.mu.Unlock()
+	s.emit(Event{Type: "open"})
 	return res, nil
+}
+
+// State reports the current session for late-joining screens.
+func (s *Service) State() OpenResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stateLocked()
+}
+
+func (s *Service) stateLocked() OpenResult {
+	res := OpenResult{Dir: s.dir, ReadOnly: s.readOnly,
+		Photos: make([]PhotoDTO, len(s.photos)), Rejected: []string{}}
+	for i, p := range s.photos {
+		res.Photos[i] = PhotoDTO{ID: p.ID, Name: filepath.Base(displayFile(p)), Pair: p.Pair()}
+		if s.rejected[p.ID] {
+			res.Rejected = append(res.Rejected, p.ID)
+		}
+	}
+	return res
+}
+
+// SetReject marks or unmarks a photo and tells every connected screen.
+func (s *Service) SetReject(id string, rejected bool) error {
+	s.mu.Lock()
+	found := false
+	for _, p := range s.photos {
+		if p.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.mu.Unlock()
+		return fmt.Errorf("unknown photo %q", id)
+	}
+	if rejected {
+		s.rejected[id] = true
+	} else {
+		delete(s.rejected, id)
+	}
+	s.mu.Unlock()
+	s.emit(Event{Type: "reject", ID: id, Rejected: rejected})
+	return nil
 }
 
 // Rescan re-reads the current folder — the recovery path after a card was
@@ -200,16 +307,111 @@ func (s *Service) CommitRejects(ids []string) (CommitResult, error) {
 		}
 	}
 	s.photos = keepers
+	for id := range moved {
+		delete(s.rejected, id)
+	}
 	s.mu.Unlock()
+	if len(res.MovedIDs) > 0 {
+		s.emit(Event{Type: "commit", MovedIDs: res.MovedIDs, Dest: res.Dest})
+	}
 	return res, nil
 }
 
-// Handler serves the image API: /api/thumb/{id} and /api/preview/{id}.
+/* ---------- HTTP API ---------- */
+
+// Handler serves the full culling API: images (/api/thumb, /api/preview),
+// session state (/api/photos), actions (/api/reject, /api/commit), and the
+// live event stream (/api/events). Identical for desktop and phone.
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/thumb/", s.serveImage(false))
 	mux.HandleFunc("/api/preview/", s.serveImage(true))
+	mux.HandleFunc("/api/photos", s.servePhotos)
+	mux.HandleFunc("/api/reject", s.serveReject)
+	mux.HandleFunc("/api/commit", s.serveCommit)
+	mux.HandleFunc("/api/events", s.serveEvents)
 	return mux
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func (s *Service) servePhotos(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.State())
+}
+
+func (s *Service) serveReject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID       string `json:"id"`
+		Rejected bool   `json:"rejected"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.SetReject(req.ID, req.Rejected); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Service) serveCommit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := s.CommitRejects(req.IDs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, res)
+}
+
+// serveEvents streams state changes as Server-Sent Events — chosen over
+// WebSockets because it's plain HTTP (works through the Wails asset server
+// and any LAN setup) and EventSource reconnects by itself.
+func (s *Service) serveEvents(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	ch, cancel := s.Subscribe()
+	defer cancel()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	fmt.Fprint(w, ": connected\n\n")
+	fl.Flush()
+	ping := time.NewTicker(ssePingInterval)
+	defer ping.Stop()
+	for {
+		select {
+		case e := <-ch:
+			b, _ := json.Marshal(e)
+			fmt.Fprintf(w, "data: %s\n\n", b)
+			fl.Flush()
+		case <-ping.C:
+			fmt.Fprint(w, ": ping\n\n")
+			fl.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 // displayFile is the file a photo is presented as: the camera JPEG when the

@@ -5,6 +5,9 @@ package previewtest
 import (
 	"bytes"
 	"encoding/binary"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"os"
 )
 
@@ -18,6 +21,30 @@ func JPEGBlob(n int, fill byte) []byte {
 	}
 	b[n-2], b[n-1] = 0xFF, 0xD9
 	return b
+}
+
+// RealJPEG encodes an actual decodable JPEG (a hue ramp with an index-tinted
+// stripe) — for fixtures that a browser has to render, e.g. demo shoots.
+func RealJPEG(w, h, idx int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8(40 + 180*x/max(w, 1)),
+				G: uint8(30 + (idx*47)%180),
+				B: uint8(200 - 150*y/max(h, 1)),
+				A: 255,
+			})
+		}
+	}
+	for y := h / 3; y < h/3+max(h/10, 2) && y < h; y++ { // per-index stripe
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: uint8((idx * 83) % 255), G: 240, B: 90, A: 255})
+		}
+	}
+	var b bytes.Buffer
+	jpeg.Encode(&b, img, &jpeg.Options{Quality: 82})
+	return b.Bytes()
 }
 
 // ARWBytes builds a little-endian TIFF resembling an ARW: IFD0 carries the

@@ -1,22 +1,25 @@
 /* Real backend: active only inside the Wails app, where the Go bridge
-   (window.go) exists. Photo metadata flows over the bridge; image bytes come
-   from the asset server's /api routes so the browser decodes them off the
-   main thread and the Go side can prefetch. Same contract as the mock. */
+   (window.go) exists. Photo metadata and actions flow over the bridge;
+   image bytes come from the asset server's /api routes so the browser
+   decodes them off the main thread and the Go side can prefetch. State
+   changes arrive as Wails runtime events. Same contract as the mock. */
 'use strict';
 
 (function () {
   const bridge = window.go && window.go.main && window.go.main.App;
-  if (!bridge) return; // plain browser: app.js falls back to the mock
+  if (!bridge) return; // plain browser: app.js falls back to http or mock
 
   window.QKWailsBackend = {
     isMock: false,
     label: '',
     readOnly: false,
+    serverMarks: [],
     metas: [],
 
     _apply(res) {
       this.label = res.dir;
       this.readOnly = !!res.readOnly;
+      this.serverMarks = res.rejected || [];
       this.metas = (res.photos || []).map(p => ({
         id: p.id, name: p.name, pair: p.pair, burstStart: false,
       }));
@@ -54,6 +57,10 @@
       return im;
     },
 
+    setReject(id, rejected) {
+      bridge.SetReject(id, rejected).catch(() => {});
+    },
+
     async commit(indices) {
       const ids = indices.map(i => this.metas[i].id);
       const res = await bridge.CommitRejects(ids);
@@ -63,5 +70,15 @@
       }
       return res;
     },
+
+    onEvent(cb) {
+      if (window.runtime && window.runtime.EventsOn) {
+        window.runtime.EventsOn('qk', cb);
+      }
+    },
+
+    // Phone remote session controls (the QR sheet).
+    async startRemote() { return bridge.StartRemote(); },
+    async stopRemote() { return bridge.StopRemote(); },
   };
 })();

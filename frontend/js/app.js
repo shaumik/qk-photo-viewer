@@ -1,9 +1,9 @@
 /* QK viewer: keyboard-first culling on desktop, touch on remote (phone) sessions.
-   All photo access goes through a backend object; window.QKWailsBackend (real card,
-   milestone 2) wins over window.QKMockBackend (canvas fake shoot). */
+   All photo access goes through a backend object, picked at boot:
+   Wails bridge (inside the app) > HTTP (phone remote / qkserve) > mock. */
 'use strict';
 
-const backend = window.QKWailsBackend || window.QKMockBackend;
+let backend = null; // assigned in init before anything runs
 const coarse = matchMedia('(pointer:coarse)').matches;
 
 const $ = id => document.getElementById(id);
@@ -88,6 +88,36 @@ function toggleReject() {
   const p = photos[cur]; p.rej = !p.rej;
   p.el.classList.toggle('rej', p.rej); p.gel.classList.toggle('rej', p.rej);
   refreshRejUI();
+  backend.setReject?.(p.id, p.rej); // other screens hear about it via events
+}
+
+/* Sync events from other screens (phone ↔ desktop). Everything is
+   idempotent: our own actions echo back and are recognized as no-ops. */
+function onSyncEvent(e) {
+  if (e.type === 'reject') {
+    const p = photos.find(q => q.id === e.id);
+    if (!p || !!p.rej === !!e.rejected) return;
+    p.rej = !!e.rejected;
+    p.el.classList.toggle('rej', p.rej); p.gel.classList.toggle('rej', p.rej);
+    refreshRejUI();
+  } else if (e.type === 'commit') {
+    const moved = new Set(e.movedIds || []);
+    let removed = 0;
+    for (let i = photos.length - 1; i >= 0; i--) if (moved.has(photos[i].id)) {
+      photos[i].el.remove(); photos[i].gel.remove(); photos.splice(i, 1); removed++;
+    }
+    if (!removed) return; // we were the initiator; already applied
+    lru.clear();
+    $('total').textContent = photos.length;
+    show(Math.min(cur, photos.length - 1));
+    refreshRejUI();
+    toast(`<b>✓</b> ${removed} committed from another screen — ${photos.length} keepers`);
+  } else if (e.type === 'open' && backend.refresh) {
+    backend.refresh().then(metas => {
+      buildPhotos(metas, new Set(backend.serverMarks || []));
+      show(0); refreshRejUI();
+    });
+  }
 }
 
 /* ---------- zoom + pan ---------- */
@@ -200,7 +230,8 @@ let keyCount = 0;
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     gridEl.classList.add('hidden'); helpEl.classList.add('hidden');
-    modalEl.classList.add('hidden'); setZoom(false); return;
+    modalEl.classList.add('hidden'); $('remoteSheet').classList.add('hidden');
+    setZoom(false); return;
   }
   if (!modalEl.classList.contains('hidden')) {
     if (e.key === 'Enter') { doCommit(); e.preventDefault(); } return;
@@ -257,19 +288,45 @@ $('rescanBtn').onclick = async () => {
   }
   $('gone').classList.add('hidden');
   buildPhotos(metas, marked);
+  marked.forEach(id => backend.setReject?.(id, true)); // re-seed other screens
   await show(Math.min(cur, photos.length - 1));
   refreshRejUI();
 };
 
+/* ---------- phone remote session (QR sheet) ---------- */
+$('remoteBtn').onclick = async () => {
+  try {
+    const info = await backend.startRemote();
+    $('qrImg').src = info.qr;
+    $('remoteUrl').textContent = info.url;
+    $('remoteSheet').classList.remove('hidden');
+  } catch (e) {
+    toast('⚠ Could not start the remote session: ' + (e.message || e));
+  }
+};
+$('remoteClose').onclick = () => $('remoteSheet').classList.add('hidden');
+$('remoteStop').onclick = async () => {
+  await backend.stopRemote?.();
+  $('remoteSheet').classList.add('hidden');
+  toast('Remote session stopped');
+};
+
 /* ---------- boot ---------- */
 (async function init() {
+  backend = window.QKWailsBackend
+    || (window.QKHttpBackend ? await window.QKHttpBackend.detect() : null)
+    || window.QKMockBackend;
+
   $('pathLabel').textContent = backend.label;
   if (backend.isMock) $('mockChip').classList.remove('hidden');
+  if (backend.startRemote) $('remoteBtn').classList.remove('hidden');
+  if (backend.isRemote) $('remoteChip').textContent = 'REMOTE · ' + location.hostname;
   if (coarse) $('hintBar').innerHTML =
     '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
 
   const metas = await backend.open();
-  buildPhotos(metas, null);
+  buildPhotos(metas, new Set(backend.serverMarks || []));
+  backend.onEvent?.(onSyncEvent);
   if (!photos.length) return;
   await show(0);
   refreshRejUI();

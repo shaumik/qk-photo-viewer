@@ -138,6 +138,14 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 #toast.on{opacity:1}
 #toast b{color:var(--ok)}
 
+/* phone remote QR sheet */
+.sheet-center{text-align:center}
+.row-center{justify-content:center!important}
+.qr{width:220px;height:220px;display:block;margin:8px auto 10px;
+    background:#fff;padding:10px;border-radius:8px}
+.remote-url{font-family:var(--mono);font-size:11px;color:var(--text-dim);
+            word-break:break-all;margin-bottom:6px}
+
 /* slow-media loading pip: shows only when a frame takes >180ms */
 #stage.loading::after{content:'';position:absolute;right:16px;bottom:16px;
   width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);
@@ -157,7 +165,7 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 #remoteChip::before{content:'';width:6px;height:6px;border-radius:99px;background:var(--ok)}
 #mbar{display:none}
 @media (pointer:coarse){
-  .navbtn,.path,#commitBtn,#helpBtn{display:none}
+  .navbtn,.path,#commitBtn,#helpBtn,#remoteBtn{display:none}
   header{gap:8px;padding:0 10px}
   #remoteChip{display:inline-flex;min-width:0;overflow:hidden;flex:0 1 auto}
   #mbar{display:flex;align-items:center;gap:10px;flex:none;
