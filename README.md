@@ -29,7 +29,12 @@ because, by the time you press →, the next frame is already in memory.
 | `?` | shortcut help |
 
 Deletes are **mark-then-commit**: rejects dim in the filmstrip, and one
-explicit confirm moves them — recoverable — off the keeper list.
+explicit confirm moves them — whole RAW+JPEG pairs — into the **macOS
+Trash** (the card's own `.Trashes`, so it's an instant rename and shows up
+in the Trash icon). On filesystems where that's not possible they go to a
+`QK_REJECTS` folder on the card instead. Either way: recoverable until you
+empty it, and a commit is never all-or-nothing — if the card dies mid-move,
+whatever moved moved, the rest stays listed and marked.
 
 ## Remote session (phone)
 
@@ -86,8 +91,12 @@ browser tab.
       filmstrip, LRU caches with in-flight dedupe, background prefetch
       ring, `/api/thumb` + `/api/preview` served through the Wails asset
       server, folder picker, and the frontend bridge wired in.
-- [ ] **3. File ops for real cards** — macOS Trash integration, SD-card
-      edge cases (slow readers, card removal mid-cull).
+- [x] **3. File ops for real cards** — real macOS Trash (volume
+      `.Trashes` / `~/.Trash`, rejects-folder fallback), per-file commits
+      that survive a dying card, card-removed detection with mark-keeping
+      rescan, read-only card warning at open time, DCF folder rollover
+      (`DCIM/100MSDCF` + `101MSDCF` culled together), slow-reader loading
+      indicator.
 - [x] **4. Package** — universal `.app` built by GitHub Actions on every
       push, attached to a GitHub Release on version tags. (Code signing /
       notarization still open — needs an Apple Developer account.)

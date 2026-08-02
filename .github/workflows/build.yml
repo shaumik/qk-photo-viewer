@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - run: go test ./internal/... # darwin-only paths (Trash) compile and test here
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
       - name: Build universal .app (Intel + Apple Silicon)

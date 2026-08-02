@@ -40,6 +40,7 @@ function prefetch(i) {
 
 /* ---------- viewer ---------- */
 async function show(i) {
+  if (!photos.length) return;
   cur = Math.max(0, Math.min(photos.length - 1, i));
   const p = photos[cur], my = ++showSeq;
   $('pos').textContent = cur + 1;
@@ -49,11 +50,29 @@ async function show(i) {
   document.querySelectorAll('.thumb.cur,.gcell.cur').forEach(e => e.classList.remove('cur'));
   p.el.classList.add('cur'); p.gel.classList.add('cur');
   p.el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' });
-  const el = await fullFor(cur);
+  // Slow readers: admit the frame isn't here yet instead of freezing.
+  const slow = setTimeout(() => { if (my === showSeq) stage.classList.add('loading'); }, 180);
+  let el;
+  try {
+    el = await fullFor(cur);
+  } catch (e) {
+    clearTimeout(slow); stage.classList.remove('loading');
+    if (my === showSeq) handleLoadError(p, e);
+    return;
+  }
+  clearTimeout(slow); stage.classList.remove('loading');
   if (my !== showSeq) return;               // a newer frame won the race
   stage.replaceChildren(el);
   setZoom(zoomed);                          // zoom persists across frames: flip a burst at 1:1 to compare focus
   prefetch(cur);
+}
+
+async function handleLoadError(p, err) {
+  if (backend.folderPresent && !(await backend.folderPresent())) {
+    $('gone').classList.remove('hidden');   // card ejected mid-cull
+    return;
+  }
+  toast(`⚠ ${err && err.message ? err.message : 'could not load ' + p.name}`);
 }
 
 function refreshRejUI() {
@@ -123,6 +142,10 @@ function toggleGrid(on) {
 }
 function openCommit() {
   const rej = photos.filter(p => p.rej); if (!rej.length) return;
+  if (backend.readOnly) {
+    toast('⚠ Card is locked (read-only) — flip the little switch on the card, then reopen');
+    return;
+  }
   $('modalTitle').textContent = `Move ${rej.length} photo${rej.length > 1 ? 's' : ''} to Trash`;
   $('modalStrip').replaceChildren(...rej.map(p => {
     const im = new Image(); im.src = p.el.querySelector('img').src; return im;
@@ -132,15 +155,29 @@ function openCommit() {
 async function doCommit() {
   const indices = photos.map((p, i) => p.rej ? i : -1).filter(i => i >= 0);
   if (!indices.length) return;
-  await backend.commit(indices);
-  for (let i = photos.length - 1; i >= 0; i--) if (photos[i].rej) {
+  let res;
+  try {
+    res = await backend.commit(indices);
+  } catch (e) {
+    modalEl.classList.add('hidden');
+    handleLoadError(photos[cur], new Error('commit failed — nothing was lost, files are still on the card'));
+    return;
+  }
+  // Remove exactly what the backend says moved; anything that failed
+  // stays in the session, still marked, so no photo silently vanishes.
+  const moved = new Set(res.movedIds || []);
+  for (let i = photos.length - 1; i >= 0; i--) if (moved.has(photos[i].id)) {
     photos[i].el.remove(); photos[i].gel.remove(); photos.splice(i, 1);
   }
   lru.clear(); modalEl.classList.add('hidden');
   $('total').textContent = photos.length;
   await show(Math.min(cur, photos.length - 1));
   refreshRejUI();
-  toast(`<b>✓</b> ${indices.length} pair${indices.length > 1 ? 's' : ''} moved — ${photos.length} keepers`);
+  if (res.errors && res.errors.length) {
+    toast(`⚠ ${moved.size} moved to ${res.dest || 'Trash'}, ${res.errors.length} file${res.errors.length > 1 ? 's' : ''} failed — still on the card, still marked`);
+  } else {
+    toast(`<b>✓</b> ${moved.size} pair${moved.size > 1 ? 's' : ''} moved to ${res.dest || 'Trash'} — ${photos.length} keepers`);
+  }
 }
 let toastT = 0;
 function toast(html) {
@@ -182,20 +219,9 @@ document.addEventListener('keydown', e => {
   if (++keyCount === 6) $('hintBar').classList.add('gone');
 });
 
-/* ---------- boot ---------- */
-(async function init() {
-  $('pathLabel').textContent = backend.label;
-  if (backend.isMock) $('mockChip').classList.remove('hidden');
-  if (coarse) $('hintBar').innerHTML =
-    '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
-
-  const metas = await backend.open();
-  $('pathLabel').textContent = backend.label; // may only be known after open (folder picker)
-  if (!metas.length) {
-    $('fname').textContent = 'no photos found';
-    $('pairChip').classList.add('hidden');
-    return;
-  }
+/* ---------- building the session ---------- */
+function buildPhotos(metas, marked) {
+  strip.replaceChildren(); gwrap.replaceChildren(); lru.clear();
   photos = metas.map((m, i) => {
     const t = document.createElement('div'); t.className = 'thumb';
     t.innerHTML = `${m.burstStart && i ? '<span class="bstart"></span>' : ''}` +
@@ -205,11 +231,46 @@ document.addEventListener('keydown', e => {
     g.innerHTML = `<img src="${backend.thumbURL(i)}" alt=""><span class="x">✕</span>` +
       `<span class="nm">${m.name}</span>`;
     g.onclick = () => { show(photos.indexOf(p)); toggleGrid(false); };
-    const p = { ...m, rej: false, el: t, gel: g };
+    const p = { ...m, rej: !!(marked && marked.has(m.id)), el: t, gel: g };
+    if (p.rej) { t.classList.add('rej'); g.classList.add('rej'); }
     gwrap.appendChild(g);
     return p;
   });
+  $('pathLabel').textContent = backend.label;
+  $('roChip').classList.toggle('hidden', !backend.readOnly);
   $('total').textContent = photos.length;
+  if (!photos.length) {
+    $('fname').textContent = 'no photos found';
+    $('pairChip').classList.add('hidden');
+  }
+}
+
+$('rescanBtn').onclick = async () => {
+  // Card came back: rescan the same folder, keep the user's reject marks.
+  const marked = new Set(photos.filter(p => p.rej).map(p => p.id));
+  let metas;
+  try {
+    metas = await (backend.rescan ? backend.rescan() : backend.open());
+  } catch (e) {
+    toast('⚠ Still can’t reach the folder — is the card mounted?');
+    return;
+  }
+  $('gone').classList.add('hidden');
+  buildPhotos(metas, marked);
+  await show(Math.min(cur, photos.length - 1));
+  refreshRejUI();
+};
+
+/* ---------- boot ---------- */
+(async function init() {
+  $('pathLabel').textContent = backend.label;
+  if (backend.isMock) $('mockChip').classList.remove('hidden');
+  if (coarse) $('hintBar').innerHTML =
+    '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
+
+  const metas = await backend.open();
+  buildPhotos(metas, null);
+  if (!photos.length) return;
   await show(0);
   refreshRejUI();
   setTimeout(() => $('hintBar').classList.add('gone'), 12000);

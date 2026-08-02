@@ -7,13 +7,17 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"sync"
 
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 	"github.com/shaumik/qk-photo-viewer/internal/library"
 	"github.com/shaumik/qk-photo-viewer/internal/preview"
+	"github.com/shaumik/qk-photo-viewer/internal/trash"
 )
 
 // PhotoDTO is what the frontend sees for each shot.
@@ -21,6 +25,22 @@ type PhotoDTO struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Pair string `json:"pair"`
+}
+
+// OpenResult describes an opened shoot folder.
+type OpenResult struct {
+	Dir      string     `json:"dir"`
+	ReadOnly bool       `json:"readOnly"` // e.g. the card's lock switch is on
+	Photos   []PhotoDTO `json:"photos"`
+}
+
+// CommitResult reports what a commit actually did. A commit is per-file and
+// never all-or-nothing: photos whose files all moved are in MovedIDs; any
+// photo with a failed file stays in the session and its error is listed.
+type CommitResult struct {
+	MovedIDs []string `json:"movedIds"`
+	Dest     string   `json:"dest"` // "Trash", the rejects folder name, or both
+	Errors   []string `json:"errors"`
 }
 
 const (
@@ -58,53 +78,130 @@ func New() *Service {
 }
 
 // OpenFolder scans a shoot folder and makes it the active one.
-func (s *Service) OpenFolder(dir string) ([]PhotoDTO, error) {
+func (s *Service) OpenFolder(dir string) (OpenResult, error) {
 	photos, err := library.Scan(dir)
 	if err != nil {
-		return nil, err
+		return OpenResult{}, err
+	}
+	res := OpenResult{Dir: dir, ReadOnly: isReadOnly(dir), Photos: make([]PhotoDTO, len(photos))}
+	for i, p := range photos {
+		res.Photos[i] = PhotoDTO{ID: p.ID, Name: filepath.Base(displayFile(p)), Pair: p.Pair()}
 	}
 	s.mu.Lock()
 	s.dir, s.photos = dir, photos
 	s.mu.Unlock()
-
-	dtos := make([]PhotoDTO, len(photos))
-	for i, p := range photos {
-		dtos[i] = PhotoDTO{ID: p.ID, Name: filepath.Base(displayFile(p)), Pair: p.Pair()}
-	}
-	return dtos, nil
+	return res, nil
 }
 
-// CommitRejects moves the named photos (whole pairs) into the rejects
-// folder and drops them from the active list.
-func (s *Service) CommitRejects(ids []string) (int, error) {
+// Rescan re-reads the current folder — the recovery path after a card was
+// pulled and reinserted. The frontend re-applies its reject marks by ID.
+func (s *Service) Rescan() (OpenResult, error) {
+	s.mu.Lock()
+	dir := s.dir
+	s.mu.Unlock()
+	if dir == "" {
+		return OpenResult{}, errors.New("no folder open")
+	}
+	return s.OpenFolder(dir)
+}
+
+// FolderPresent reports whether the open folder is still reachable —
+// false typically means the card was ejected or the reader disconnected.
+func (s *Service) FolderPresent() bool {
+	s.mu.Lock()
+	dir := s.dir
+	s.mu.Unlock()
+	if dir == "" {
+		return false
+	}
+	_, err := os.Stat(dir)
+	return err == nil
+}
+
+// isReadOnly probes writability the honest way: by writing. Catches locked
+// SD cards and read-only mounts alike, at open time instead of commit time.
+func isReadOnly(dir string) bool {
+	f, err := os.CreateTemp(dir, ".qk-writetest-*")
+	if err != nil {
+		return true
+	}
+	name := f.Name()
+	f.Close()
+	os.Remove(name)
+	return false
+}
+
+// CommitRejects moves the named photos off the keeper list: into the
+// system Trash where available, else into the on-card rejects folder.
+// Failures are per-file — whatever could move moved, the rest is reported.
+func (s *Service) CommitRejects(ids []string) (CommitResult, error) {
 	s.mu.Lock()
 	if s.dir == "" {
 		s.mu.Unlock()
-		return 0, errors.New("no folder open")
+		return CommitResult{}, errors.New("no folder open")
 	}
+	dir := s.dir
 	want := map[string]bool{}
 	for _, id := range ids {
 		want[id] = true
 	}
-	var rejects, keepers []library.Photo
+	var rejects []library.Photo
 	for _, p := range s.photos {
 		if want[p.ID] {
 			rejects = append(rejects, p)
-		} else {
+		}
+	}
+	s.mu.Unlock()
+
+	res := CommitResult{}
+	rejectsDir := filepath.Join(dir, library.RejectsDirName)
+	trashWorks := true
+	trashed, forlorn := 0, 0
+	for _, p := range rejects {
+		ok := true
+		for _, src := range p.Files() {
+			if trashWorks {
+				if _, err := trash.Put(src); err == nil {
+					trashed++
+					continue
+				} else if errors.Is(err, trash.ErrUnsupported) {
+					trashWorks = false // stop retrying trash for this commit
+				}
+			}
+			if _, err := fsutil.MoveInto(rejectsDir, src); err != nil {
+				res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", filepath.Base(src), err))
+				ok = false
+			} else {
+				forlorn++
+			}
+		}
+		if ok {
+			res.MovedIDs = append(res.MovedIDs, p.ID)
+		}
+	}
+	switch {
+	case trashed > 0 && forlorn > 0:
+		res.Dest = "Trash + " + library.RejectsDirName
+	case trashed > 0:
+		res.Dest = "Trash"
+	case forlorn > 0:
+		res.Dest = library.RejectsDirName
+	}
+
+	moved := map[string]bool{}
+	for _, id := range res.MovedIDs {
+		moved[id] = true
+	}
+	s.mu.Lock()
+	keepers := s.photos[:0:0]
+	for _, p := range s.photos {
+		if !moved[p.ID] {
 			keepers = append(keepers, p)
 		}
 	}
-	dir := s.dir
-	s.mu.Unlock()
-
-	moved, err := library.CommitRejects(dir, rejects)
-	if err != nil {
-		return moved, err
-	}
-	s.mu.Lock()
 	s.photos = keepers
 	s.mu.Unlock()
-	return moved, nil
+	return res, nil
 }
 
 // Handler serves the image API: /api/thumb/{id} and /api/preview/{id}.

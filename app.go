@@ -28,12 +28,23 @@ func (a *App) PickFolder() (string, error) {
 }
 
 // OpenFolder scans a shoot folder and returns its photos in shooting order.
-func (a *App) OpenFolder(dir string) ([]server.PhotoDTO, error) {
+func (a *App) OpenFolder(dir string) (server.OpenResult, error) {
 	return a.svc.OpenFolder(dir)
 }
 
-// CommitRejects moves the named photos (whole pairs) into the rejects
-// folder and returns the number of files moved.
-func (a *App) CommitRejects(ids []string) (int, error) {
+// Rescan re-reads the current folder after a card comes back.
+func (a *App) Rescan() (server.OpenResult, error) {
+	return a.svc.Rescan()
+}
+
+// FolderPresent reports whether the open folder is still reachable.
+func (a *App) FolderPresent() bool {
+	return a.svc.FolderPresent()
+}
+
+// CommitRejects moves the named photos (whole pairs) to the Trash, or the
+// on-card rejects folder where Trash isn't possible. Per-file failures are
+// reported in the result, not fatal.
+func (a *App) CommitRejects(ids []string) (server.CommitResult, error) {
 	return a.svc.CommitRejects(ids)
 }

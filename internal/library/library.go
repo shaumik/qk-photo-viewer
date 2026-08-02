@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 // Sony first (ARW); other RAW formats join as they're needed.
@@ -34,7 +37,8 @@ func (p Photo) Pair() string {
 	}
 }
 
-func (p Photo) files() []string {
+// Files lists the photo's on-disk files (1 or 2 paths).
+func (p Photo) Files() []string {
 	var fs []string
 	if p.Raw != "" {
 		fs = append(fs, p.Raw)
@@ -45,35 +49,61 @@ func (p Photo) files() []string {
 	return fs
 }
 
-// Scan lists dir (non-recursive: cards keep a flat DCIM/100MSDCF layout),
-// pairs RAW+JPEG files that share a basename, and sorts by name — which on a
-// card is also chronological order.
+// dcfDirRe matches DCF-numbered card folders (100MSDCF, 101MSDCF, ...) —
+// cameras roll over to a new one every 9999 shots.
+var dcfDirRe = regexp.MustCompile(`^\d{3}[0-9A-Za-z_]{1,5}$`)
+
+// Scan lists a shoot folder, pairs RAW+JPEG files that share a basename,
+// and sorts by ID — which on a card is also chronological order. If dir is
+// a DCIM-style parent (containing 100MSDCF-like subfolders), those are
+// scanned too, with IDs prefixed "100MSDCF:" so rolled-over filenames
+// can't collide.
 func Scan(dir string) ([]Photo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("scan %s: %w", dir, err)
 	}
 	byID := map[string]*Photo{}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || strings.HasPrefix(name, ".") {
-			continue
+	collect := func(base, idPrefix, name string) {
+		if strings.HasPrefix(name, ".") {
+			return
 		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if !rawExts[ext] && !jpegExts[ext] {
-			continue
+			return
 		}
-		id := strings.TrimSuffix(name, filepath.Ext(name))
+		id := idPrefix + strings.TrimSuffix(name, filepath.Ext(name))
 		p, ok := byID[id]
 		if !ok {
 			p = &Photo{ID: id}
 			byID[id] = p
 		}
-		full := filepath.Join(dir, name)
+		full := filepath.Join(base, name)
 		if rawExts[ext] {
 			p.Raw = full
 		} else {
 			p.Jpeg = full
+		}
+	}
+	var dcfDirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			if dcfDirRe.MatchString(e.Name()) {
+				dcfDirs = append(dcfDirs, e.Name())
+			}
+			continue
+		}
+		collect(dir, "", e.Name())
+	}
+	for _, sub := range dcfDirs {
+		subEntries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil {
+			continue // a vanished or unreadable subfolder shouldn't sink the scan
+		}
+		for _, e := range subEntries {
+			if !e.IsDir() {
+				collect(filepath.Join(dir, sub), sub+":", e.Name())
+			}
 		}
 	}
 	photos := make([]Photo, 0, len(byID))
@@ -93,26 +123,11 @@ const RejectsDirName = "QK_REJECTS"
 // It returns the number of files moved. A name collision in the rejects
 // folder gets a numeric suffix rather than overwriting.
 func CommitRejects(dir string, rejects []Photo) (int, error) {
-	if len(rejects) == 0 {
-		return 0, nil
-	}
 	dest := filepath.Join(dir, RejectsDirName)
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		return 0, fmt.Errorf("create rejects folder: %w", err)
-	}
 	moved := 0
 	for _, p := range rejects {
-		for _, src := range p.files() {
-			target := filepath.Join(dest, filepath.Base(src))
-			for n := 1; ; n++ {
-				if _, err := os.Lstat(target); os.IsNotExist(err) {
-					break
-				}
-				ext := filepath.Ext(src)
-				base := strings.TrimSuffix(filepath.Base(src), ext)
-				target = filepath.Join(dest, fmt.Sprintf("%s-%d%s", base, n, ext))
-			}
-			if err := os.Rename(src, target); err != nil {
+		for _, src := range p.Files() {
+			if _, err := fsutil.MoveInto(dest, src); err != nil {
 				return moved, fmt.Errorf("move %s: %w", src, err)
 			}
 			moved++

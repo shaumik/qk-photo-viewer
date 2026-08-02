@@ -13,6 +13,7 @@
     <div class="brand"><b>QK</b><span class="mock-chip hidden" id="mockChip">MOCK SHOOT</span></div>
     <div class="path" id="pathLabel">—</div>
     <span id="remoteChip">REMOTE · MacBook-Pro.local</span>
+    <span id="roChip" class="hidden">READ-ONLY</span>
     <div class="counter"><span id="pos">1</span> <span>/</span> <span id="total">0</span></div>
     <span class="rej-chip empty" id="rejChip">0 rejected</span>
     <button id="commitBtn" disabled>Commit rejects</button>
@@ -42,6 +43,16 @@
           <tr><td><kbd>Esc</kbd></td><td>Close overlays</td></tr>
         </table>
         <div class="row" style="margin-top:16px"><button id="helpClose">Close</button></div>
+      </div>
+    </div>
+
+    <div id="gone" class="overlay hidden">
+      <div class="sheet">
+        <h2>Card removed</h2>
+        <p>The folder isn't reachable — the card may have been ejected or the
+           reader disconnected. Nothing was lost: reinsert the card and rescan.
+           Your reject marks are kept.</p>
+        <div class="row"><button id="rescanBtn">Rescan</button></div>
       </div>
     </div>
 

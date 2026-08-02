@@ -107,7 +107,7 @@ window.QKMockBackend = (function () {
         drawScene(c.getContext('2d'), TW, TH, p);
         p.thumb = c.toDataURL('image/jpeg', .85);
       }
-      return shots.map(p => ({ name: p.name + '.ARW', pair: 'ARW +JPG', burstStart: p.first }));
+      return shots.map(p => ({ id: p.name, name: p.name + '.ARW', pair: 'ARW +JPG', burstStart: p.first }));
     },
 
     thumbURL(i) { return shots[i].thumb; },
@@ -119,8 +119,10 @@ window.QKMockBackend = (function () {
     },
 
     async commit(indices) {
+      const movedIds = indices.map(i => shots[i].name);
       const gone = new Set(indices);
       for (let i = shots.length - 1; i >= 0; i--) if (gone.has(i)) shots.splice(i, 1);
+      return { movedIds, dest: 'Trash', errors: [] };
     },
   };
 })();

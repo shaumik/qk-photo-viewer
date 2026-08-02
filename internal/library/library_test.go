@@ -48,6 +48,34 @@ func TestScanPairsAndSorts(t *testing.T) {
 	}
 }
 
+func TestScanDCIMParentWithRolledOverFolders(t *testing.T) {
+	// Cameras roll to a new numbered folder every 9999 shots, and filenames
+	// restart — the same DSC number can exist in both. Opening the DCIM
+	// parent must find both and keep their IDs distinct.
+	dir := t.TempDir()
+	for _, sub := range []string{"100MSDCF", "101MSDCF"} {
+		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		touch(t, filepath.Join(dir, sub), "DSC09999.ARW")
+	}
+	if err := os.Mkdir(filepath.Join(dir, "MISC"), 0o755); err != nil { // non-DCF: ignored
+		t.Fatal(err)
+	}
+	touch(t, filepath.Join(dir, "MISC"), "DSC00001.ARW")
+
+	photos, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 2 {
+		t.Fatalf("got %d photos, want 2: %+v", len(photos), photos)
+	}
+	if photos[0].ID != "100MSDCF:DSC09999" || photos[1].ID != "101MSDCF:DSC09999" {
+		t.Errorf("rolled-over IDs should be folder-prefixed: %+v", photos)
+	}
+}
+
 func TestPairLabels(t *testing.T) {
 	cases := []struct {
 		p    Photo

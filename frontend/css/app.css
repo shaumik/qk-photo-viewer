@@ -138,6 +138,18 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 #toast.on{opacity:1}
 #toast b{color:var(--ok)}
 
+/* slow-media loading pip: shows only when a frame takes >180ms */
+#stage.loading::after{content:'';position:absolute;right:16px;bottom:16px;
+  width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);
+  border-radius:50%;animation:qk-spin .8s linear infinite}
+@keyframes qk-spin{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){
+  #stage.loading::after{animation:none;border-color:var(--accent)}}
+
+#roChip{font:10.5px var(--mono);letter-spacing:.08em;color:var(--accent);
+        border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);
+        border-radius:99px;padding:3px 9px;white-space:nowrap;flex:none}
+
 /* ---------- remote session (phone over LAN) ---------- */
 #remoteChip{display:none;align-items:center;gap:6px;font:10.5px var(--mono);letter-spacing:.08em;
             color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent);
