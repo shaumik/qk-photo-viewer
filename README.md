@@ -71,9 +71,12 @@ No toolchain needed:
    [release](../../releases) — or, between releases, from the newest
    [Build workflow run](../../actions)'s artifacts.
 2. Unzip and drag `QK.app` into Applications.
-3. First launch only: **right-click the app → Open**. The app isn't
-   code-signed yet, so macOS shows a warning once; opening it this way
-   dismisses it permanently.
+3. First launch only: macOS will refuse with *"Apple could not verify
+   QK is free of malware"* because the app isn't code-signed yet. Click
+   **Done** (not Move to Trash), then **System Settings → Privacy &
+   Security → scroll down → Open Anyway**. Or, from a terminal:
+   `xattr -d com.apple.quarantine /Applications/QK.app`. Either way it's
+   a one-time dance — macOS remembers.
 
 The build is a universal binary — Intel and Apple Silicon Macs both work.
 
