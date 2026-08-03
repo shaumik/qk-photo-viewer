@@ -1,117 +1,71 @@
-# QK — burst photo culler
+# QK
 
-A fast, keyboard-first photo culler. Point it at your SD card,
-rip through a burst, kill the soft frames, commit the rejects. No import
-step, no catalog, no lag.
+**Rip through burst photos straight off the SD card.** No import, no
+catalog, no waiting for anything to load. Look at a shot, keep it or kill
+it, next.
 
-## Why
+![The QK viewer](docs/screenshots/viewer.png)
 
-Burst shooting leaves 500–2,000 near-identical frames on a card, and macOS
-gives you nothing good for triaging them in place: Photos.app forces a full
-import first, Quick Look has no delete workflow, and Adobe Bridge fully
-decodes every RAW while building a cache database — that's the lag.
+You shot 800 frames of a bird and 30 of them matter. Photos.app wants to
+import everything first. Bridge wants to think about each file. QK just
+opens the folder and shows you the first photo before you've let go of the
+mouse — because your camera already rendered a preview of every shot, and
+QK uses it instead of chewing through the RAW.
 
-QK does what the $139 pro tools do: **it never decodes the RAW.** Cameras
-embed a full-size JPEG preview inside every ARW; QK extracts that preview
-(milliseconds, not seconds) and prefetches the next several frames into a
-ring buffer while you look at the current one. Culling feels instant
-because, by the time you press →, the next frame is already in memory.
+## What it does
 
-## Workflow
+- **Opens your card directly** — pick the folder, start culling. Sony ARW
+  and JPEG, with RAW+JPEG pairs treated as one photo.
+- **Flip through a burst like a flipbook** — hold `→`. The next frames are
+  already loaded before you get there.
+- **Zoom that stays put** — `Z` for 1:1, and it stays locked while you
+  arrow between near-identical frames to see which one nailed focus.
+- **Nothing is deleted by accident** — `X` marks a reject (dim, red ✕,
+  fully reversible). One explicit **Commit** moves the marked pairs to the
+  Trash, where they're recoverable until you empty it.
+- **Grid overview** — `G` to see the whole shoot at once.
+
+![Grid overview](docs/screenshots/grid.png)
+
+## Cull from your phone
+
+<img src="docs/screenshots/phone.png" width="320" align="right" alt="Phone remote session">
+
+Hit **📱 Phone**, scan the QR code, and the same session opens in your
+phone's browser — swipe to flip, swipe up to reject, double-tap to zoom.
+Marks sync live between phone and laptop, both can commit, and it all runs
+over local Wi-Fi or a hotspot: no internet, no app to install, and nobody
+without the QR code can connect.
+
+Great for planes, couches, and anywhere you don't feel like hunching over
+a trackpad.
+
+<br clear="right">
+
+## Keyboard
 
 | Key | Action |
 |---|---|
-| `←` `→` | previous / next (hold to flip a burst like a flipbook) |
-| `X` | mark / unmark reject — nothing is deleted yet |
-| `Z` or click | 1:1 zoom; move the mouse to pan. Zoom persists across frames so you can compare focus within a burst |
+| `←` `→` | previous / next photo (hold to flip) |
+| `X` | mark / unmark reject |
+| `Z` or click | 1:1 zoom, move mouse to pan |
 | `G` | grid overview |
-| `⌘⏎` | commit: review the rejects, then move them (whole RAW+JPEG pairs) into a rejects folder on the card |
-| `?` | shortcut help |
+| `⌘⏎` | commit rejects |
+| `⌘O` | open a different folder |
+| `?` | all shortcuts |
 
-Deletes are **mark-then-commit**: rejects dim in the filmstrip, and one
-explicit confirm moves them — whole RAW+JPEG pairs — into the **macOS
-Trash** (the card's own `.Trashes`, so it's an instant rename and shows up
-in the Trash icon). On filesystems where that's not possible they go to a
-`QK_REJECTS` folder on the card instead. Either way: recoverable until you
-empty it, and a commit is never all-or-nothing — if the card dies mid-move,
-whatever moved moved, the rest stays listed and marked.
+## Install
 
-## Remote session (phone)
+1. Download `QK-macos.zip` from the
+   [latest release](../../releases/latest) and drag `QK.app` into
+   Applications. Works on Intel and Apple Silicon.
+2. First launch: macOS will balk because the app isn't code-signed.
+   Click **Done**, then **System Settings → Privacy & Security → Open
+   Anyway**. One time only.
+3. Plug in your card, open the `DCIM` folder, cull.
 
-Hit **📱 Phone** in the app: it starts a LAN server and shows a QR code.
-Scan it with **any phone** (Android or iOS — it's just a web page, nothing
-to install) on the same Wi-Fi or hotspot, and cull from the phone: swipe to
-flip, swipe up to reject, double-tap to zoom. Reject marks and commits sync
-live between every screen (Server-Sent Events), the session is protected by
-a one-time token baked into the QR code, and no internet is involved
-anywhere. Made for airplanes.
+---
 
-There's also a headless mode for any machine with Go:
-
-```sh
-go run ./cmd/qkserve /path/to/DCIM/100MSDCF   # prints the phone URL
-go run ./cmd/qkserve -demo                    # synthetic shoot, just to try it
-```
-
-## Stack
-
-- **[Wails v2](https://wails.io)** — Go backend, native webview UI.
-  Primary target is macOS; the same codebase also builds native Windows
-  (WebView2) and Linux (WebKitGTK) apps
-- **Go** does everything performance-critical: folder scan, ARW embedded-
-  preview extraction, the prefetch ring, file moves
-- **Vanilla HTML/CSS/JS** frontend, shared verbatim between the desktop
-  window and phone remote sessions
-
-## Install (macOS)
-
-No toolchain needed:
-
-1. Download `QK-macos.zip` from the latest
-   [release](../../releases) — or, between releases, from the newest
-   [Build workflow run](../../actions)'s artifacts.
-2. Unzip and drag `QK.app` into Applications.
-3. First launch only: macOS will refuse with *"Apple could not verify
-   QK is free of malware"* because the app isn't code-signed yet. Click
-   **Done** (not Move to Trash), then **System Settings → Privacy &
-   Security → scroll down → Open Anyway**. Or, from a terminal:
-   `xattr -d com.apple.quarantine /Applications/QK.app`. Either way it's
-   a one-time dance — macOS remembers.
-
-The build is a universal binary — Intel and Apple Silicon Macs both work.
-
-## Development
-
-```sh
-make ui    # run the UI in a browser against a mock shoot (no Go needed)
-make test  # Go tests for the library core (works on any OS)
-make dev   # live-reload desktop app — needs macOS + wails CLI
-make build # package the .app                — needs macOS + wails CLI
-```
-
-The frontend picks its backend at boot: the Wails bridge when running in
-the app, otherwise a canvas-rendered mock shoot (five bursts of a bird at
-dusk, soft frames included) so the whole workflow is exercisable in a bare
-browser tab.
-
-## Milestones
-
-- [x] **1. UI + stack** — culling UI (desktop + touch), mock backend, Go
-      library core: scan, RAW+JPEG pairing, commit-rejects. All tested.
-- [x] **2. Image pipeline** — TIFF/IFD walker extracts embedded JPEG
-      previews from ARW files (no RAW decode), EXIF thumbnails for the
-      filmstrip, LRU caches with in-flight dedupe, background prefetch
-      ring, `/api/thumb` + `/api/preview` served through the Wails asset
-      server, folder picker, and the frontend bridge wired in.
-- [x] **3. File ops for real cards** — real macOS Trash (volume
-      `.Trashes` / `~/.Trash`, rejects-folder fallback), per-file commits
-      that survive a dying card, card-removed detection with mark-keeping
-      rescan, read-only card warning at open time, DCF folder rollover
-      (`DCIM/100MSDCF` + `101MSDCF` culled together), slow-reader loading
-      indicator.
-- [x] **4. Package** — universal `.app` built by GitHub Actions on every
-      push, attached to a GitHub Release on version tags. (Code signing /
-      notarization still open — needs an Apple Developer account.)
-- [x] **5. Remote session** — token-gated LAN server with QR pairing,
-      live sync over Server-Sent Events, phone commits, `qkserve`
-      headless mode.
+<sub>Want to poke at the code? `make ui` runs the interface in a browser
+with a fake shoot, `make test` runs the backend tests. Built with Go and
+Wails.</sub>
