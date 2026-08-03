@@ -42,6 +42,8 @@
         <h2>Shortcuts</h2><p>Culling is keyboard-first. Click anywhere first so keys register.</p>
         <table>
           <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Previous / next photo (hold to flip through a burst)</td></tr>
+          <tr><td><kbd>⇧</kbd><kbd>←</kbd> <kbd>⇧</kbd><kbd>→</kbd></td><td>Jump 25 photos; drag the bar above the filmstrip to go anywhere</td></tr>
+          <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First / last photo</td></tr>
           <tr><td><kbd>X</kbd></td><td>Mark / unmark reject</td></tr>
           <tr><td><kbd>Z</kbd> or click</td><td>Toggle 1:1 zoom — move mouse to pan, check focus</td></tr>
           <tr><td><kbd>G</kbd></td><td>Grid overview</td></tr>
@@ -86,6 +88,10 @@
       </div>
     </div>
   </main>
+
+  <div id="scrubWrap">
+    <input id="scrub" type="range" min="1" max="1" value="1" step="1" aria-label="Scrub to photo" disabled>
+  </div>
 
   <div id="mbar">
     <button id="mRejBtn">✕ Reject</button>

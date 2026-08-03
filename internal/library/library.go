@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -49,63 +48,56 @@ func (p Photo) Files() []string {
 	return fs
 }
 
-// dcfDirRe matches DCF-numbered card folders (100MSDCF, 101MSDCF, ...) —
-// cameras roll over to a new one every 9999 shots.
-var dcfDirRe = regexp.MustCompile(`^\d{3}[0-9A-Za-z_]{1,5}$`)
+// maxScanDepth covers a card root → DCIM → 100MSDCF, or any hand-organized
+// folder up to three levels deep.
+const maxScanDepth = 3
 
-// Scan lists a shoot folder, pairs RAW+JPEG files that share a basename,
-// and sorts by ID — which on a card is also chronological order. If dir is
-// a DCIM-style parent (containing 100MSDCF-like subfolders), those are
-// scanned too, with IDs prefixed "100MSDCF:" so rolled-over filenames
-// can't collide.
-func Scan(dir string) ([]Photo, error) {
-	entries, err := os.ReadDir(dir)
+// Scan lists a shoot folder including its subfolders (up to maxScanDepth
+// levels), pairs RAW+JPEG files that share a basename, and sorts by ID —
+// which on a card is also chronological order. IDs of nested files are
+// prefixed with their folder path ("100MSDCF:DSC09999") so rolled-over
+// filenames can't collide. Hidden entries and the rejects folder are
+// skipped; unreadable subfolders are ignored rather than fatal.
+func Scan(root string) ([]Photo, error) {
+	rootEntries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, fmt.Errorf("scan %s: %w", dir, err)
+		return nil, fmt.Errorf("scan %s: %w", root, err)
 	}
 	byID := map[string]*Photo{}
-	collect := func(base, idPrefix, name string) {
-		if strings.HasPrefix(name, ".") {
-			return
-		}
-		ext := strings.ToLower(filepath.Ext(name))
-		if !rawExts[ext] && !jpegExts[ext] {
-			return
-		}
-		id := idPrefix + strings.TrimSuffix(name, filepath.Ext(name))
-		p, ok := byID[id]
-		if !ok {
-			p = &Photo{ID: id}
-			byID[id] = p
-		}
-		full := filepath.Join(base, name)
-		if rawExts[ext] {
-			p.Raw = full
-		} else {
-			p.Jpeg = full
-		}
-	}
-	var dcfDirs []string
-	for _, e := range entries {
-		if e.IsDir() {
-			if dcfDirRe.MatchString(e.Name()) {
-				dcfDirs = append(dcfDirs, e.Name())
+	var walk func(dir, prefix string, entries []os.DirEntry, depth int)
+	walk = func(dir, prefix string, entries []os.DirEntry, depth int) {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, ".") || name == RejectsDirName {
+				continue
 			}
-			continue
-		}
-		collect(dir, "", e.Name())
-	}
-	for _, sub := range dcfDirs {
-		subEntries, err := os.ReadDir(filepath.Join(dir, sub))
-		if err != nil {
-			continue // a vanished or unreadable subfolder shouldn't sink the scan
-		}
-		for _, e := range subEntries {
-			if !e.IsDir() {
-				collect(filepath.Join(dir, sub), sub+":", e.Name())
+			if e.IsDir() {
+				if depth < maxScanDepth {
+					if sub, err := os.ReadDir(filepath.Join(dir, name)); err == nil {
+						walk(filepath.Join(dir, name), prefix+name+":", sub, depth+1)
+					}
+				}
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(name))
+			if !rawExts[ext] && !jpegExts[ext] {
+				continue
+			}
+			id := prefix + strings.TrimSuffix(name, filepath.Ext(name))
+			p, ok := byID[id]
+			if !ok {
+				p = &Photo{ID: id}
+				byID[id] = p
+			}
+			full := filepath.Join(dir, name)
+			if rawExts[ext] {
+				p.Raw = full
+			} else {
+				p.Jpeg = full
 			}
 		}
 	}
+	walk(root, "", rootEntries, 0)
 	photos := make([]Photo, 0, len(byID))
 	for _, p := range byID {
 		photos = append(photos, *p)
