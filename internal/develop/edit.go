@@ -70,8 +70,20 @@ const (
 // and saturation match how the eye reads them, and where local contrast
 // and sharpening finish the job.
 func Render(s *Scene, e Edit) *image.RGBA {
+	return render(s, e, make([]float32, len(s.Pix)))
+}
+
+// RenderInPlace is Render for a Scene that will not be needed again. It
+// works in the Scene's own buffer rather than allocating a second one,
+// which on a full-resolution export is a few hundred megabytes not asked
+// for. The Scene is left holding display values and must be discarded.
+func RenderInPlace(s *Scene, e Edit) *image.RGBA {
+	return render(s, e, s.Pix)
+}
+
+func render(s *Scene, e Edit, buf []float32) *image.RGBA {
 	e = e.Clamp()
-	buf := renderFloat(s, e)
+	renderFloat(s, e, buf)
 	spatial(buf, s.W, s.H, e)
 
 	img := image.NewRGBA(image.Rect(0, 0, s.W, s.H))
@@ -84,9 +96,9 @@ func Render(s *Scene, e Edit) *image.RGBA {
 	return img
 }
 
-// renderFloat runs the per-pixel half of the pipeline and returns
-// display-referred values in 0..1.
-func renderFloat(s *Scene, e Edit) []float32 {
+// renderFloat runs the per-pixel half of the pipeline, writing
+// display-referred values in 0..1 into out. out may alias s.Pix.
+func renderFloat(s *Scene, e Edit, out []float32) {
 	kr, kg, kb := whiteBalance(e)
 	gain := float32(math.Exp2(e.Exposure))
 	kr, kg, kb = kr*gain, kg*gain, kb*gain
@@ -95,7 +107,6 @@ func renderFloat(s *Scene, e Edit) []float32 {
 	lift := liftLUT(e)
 	vib := float32(e.Vibrance / 100)
 
-	out := make([]float32, len(s.Pix))
 	for i, n := 0, s.W*s.H; i < n; i++ {
 		r := s.Pix[i*3] * kr
 		g := s.Pix[i*3+1] * kg
@@ -113,7 +124,6 @@ func renderFloat(s *Scene, e Edit) []float32 {
 		}
 		out[i*3], out[i*3+1], out[i*3+2] = dr, dg, db
 	}
-	return out
 }
 
 // whiteBalance turns the temperature and tint sliders into linear channel

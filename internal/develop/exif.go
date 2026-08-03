@@ -58,31 +58,49 @@ func ExifFor(path string, outW, outH int) []byte {
 	return buildAPP1(t, outW, outH)
 }
 
-// copyAPP1 lifts an existing EXIF segment out of a JPEG and neutralises
-// its orientation tag.
-func copyAPP1(data []byte) []byte {
-	pos := 2
+// app1Bounds locates a JPEG's EXIF segment, returning the byte range of
+// the whole segment or -1, -1.
+func app1Bounds(data []byte) (int, int) {
+	pos := 2 // past SOI
 	for pos+4 <= len(data) {
 		if data[pos] != 0xFF {
-			return nil
+			return -1, -1
 		}
 		marker := data[pos+1]
-		if marker == 0xDA || marker == 0xD9 {
-			return nil
+		if marker == 0xDA || marker == 0xD9 { // image data begins: no EXIF ahead
+			return -1, -1
 		}
 		segLen := int(binary.BigEndian.Uint16(data[pos+2 : pos+4]))
 		if segLen < 2 || pos+2+segLen > len(data) {
-			return nil
+			return -1, -1
 		}
-		if marker == 0xE1 && segLen >= 16 &&
-			string(data[pos+4:pos+10]) == "Exif\x00\x00" {
-			seg := append([]byte(nil), data[pos:pos+2+segLen]...)
-			clearOrientation(seg[10:]) // past marker, length and "Exif\0\0"
-			return seg
+		if marker == 0xE1 && segLen >= 16 && string(data[pos+4:pos+10]) == "Exif\x00\x00" {
+			return pos, pos + 2 + segLen
 		}
 		pos += 2 + segLen
 	}
-	return nil
+	return -1, -1
+}
+
+// findAPP1 returns the TIFF block inside a JPEG's EXIF segment, or nil.
+func findAPP1(data []byte) []byte {
+	start, end := app1Bounds(data)
+	if start < 0 {
+		return nil
+	}
+	return data[start+10 : end] // past the marker, the length and "Exif\0\0"
+}
+
+// copyAPP1 lifts an existing EXIF segment out of a JPEG and neutralises
+// its orientation tag.
+func copyAPP1(data []byte) []byte {
+	start, end := app1Bounds(data)
+	if start < 0 {
+		return nil
+	}
+	seg := append([]byte(nil), data[start:end]...)
+	clearOrientation(seg[10:])
+	return seg
 }
 
 // clearOrientation rewrites every Orientation tag in a TIFF block to 1.

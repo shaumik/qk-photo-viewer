@@ -27,6 +27,44 @@ QK uses it instead of chewing through the RAW.
 
 ![Grid overview](docs/screenshots/grid.png)
 
+## Then make the keepers look right
+
+Press **`E`** on a photo you kept. QK reads the actual sensor data out of
+the ARW — not the JPEG your camera guessed at — looks at the histogram,
+and develops it: exposure, white balance, a real black point, highlight
+recovery, contrast. You don't press anything. It's just done.
+
+![Develop mode](docs/screenshots/develop.png)
+
+Then argue with it if you like. Ten sliders, named for what they do to the
+picture:
+
+- **Highlights** pulls a blown sky back out of the white. This is the one
+  that needs RAW: your camera's JPEG threw that detail away, the sensor
+  didn't.
+- **Depth** sets where black actually starts, which is most of what makes
+  a flat photo stop looking flat.
+- **Warmth** and **Tint** fix a colour cast, with the whole latitude of
+  the sensor behind them instead of an 8-bit JPEG that tears when pushed.
+- **Punch** is local contrast, **Sharpness** puts back what demosaicing
+  costs.
+
+Hold **Compare** to see what you started with. **`R`** puts it all back.
+
+**Nothing is ever written to your RAW.** Edits live in a small file beside
+it — copy the folder and they come along, delete it and the photo is as
+shot. If the card's lock switch is on, they go to app support instead, and
+you can still edit.
+
+**⌘E** writes a full-size JPEG, developed at full resolution with a proper
+demosaic and your camera, lens and location metadata carried across.
+**⌘⇧E** does that for every keeper in the shoot. **⌘C** puts the photo on
+the clipboard to paste straight into a message.
+
+<sub>Sony ARW today: uncompressed and compressed. A file QK can't decode
+falls back to editing the camera's preview instead of refusing — the panel
+says which one you're working on, because the difference is real.</sub>
+
 ## Cull from your phone
 
 <img src="docs/screenshots/phone.png" width="320" align="right" alt="Phone remote session">
@@ -50,6 +88,9 @@ a trackpad.
 | `X` | mark / unmark reject |
 | `Z` or click | 1:1 zoom, move mouse to pan |
 | `G` | grid overview |
+| `E` | develop this photo |
+| `A` | auto-develop · `R` reset · `\` before/after |
+| `⌘E` | export a JPEG · `⌘⇧E` export every keeper |
 | `⌘⏎` | commit rejects |
 | `⌘O` | open a different folder |
 | `?` | all shortcuts |

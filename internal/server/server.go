@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shaumik/qk-photo-viewer/internal/develop"
+	"github.com/shaumik/qk-photo-viewer/internal/edits"
 	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 	"github.com/shaumik/qk-photo-viewer/internal/library"
 	"github.com/shaumik/qk-photo-viewer/internal/preview"
@@ -36,6 +38,7 @@ type OpenResult struct {
 	ReadOnly bool       `json:"readOnly"` // e.g. the card's lock switch is on
 	Photos   []PhotoDTO `json:"photos"`
 	Rejected []string   `json:"rejected"` // IDs currently marked, so late joiners sync up
+	Edited   []string   `json:"edited"`   // IDs carrying a saved edit
 }
 
 // CommitResult reports what a commit actually did. A commit is per-file and
@@ -50,11 +53,23 @@ type CommitResult struct {
 // Event is a state change broadcast to every connected screen — the desktop
 // webview and any phone remote sessions.
 type Event struct {
-	Type     string   `json:"type"` // "reject" | "commit" | "open"
+	Type     string   `json:"type"` // "reject" | "commit" | "open" | "edit" | "export"
 	ID       string   `json:"id,omitempty"`
 	Rejected bool     `json:"rejected,omitempty"`
 	MovedIDs []string `json:"movedIds,omitempty"`
 	Dest     string   `json:"dest,omitempty"`
+
+	// Edits: the new state, and a short tag that changes with it so a
+	// screen knows the developed frame it is showing is stale.
+	Edit *develop.Edit `json:"edit,omitempty"`
+	Tag  string        `json:"tag,omitempty"`
+
+	// Export progress.
+	Name     string `json:"name,omitempty"`
+	Done     int    `json:"done,omitempty"`
+	Total    int    `json:"total,omitempty"`
+	Failed   int    `json:"failed,omitempty"`
+	Finished bool   `json:"finished,omitempty"`
 }
 
 const (
@@ -78,6 +93,10 @@ type Service struct {
 	thumbs   *preview.Cache
 	previews *preview.Cache
 	warm     chan string // file paths queued for background prefetch
+
+	edits   *edits.Store // how each photo should be developed
+	scenes  *sceneCache  // decoded, demosaiced frames ready for the sliders
+	renders *preview.Cache
 }
 
 func New() *Service {
@@ -87,6 +106,8 @@ func New() *Service {
 		thumbs:   preview.NewCache(thumbCacheSize),
 		previews: preview.NewCache(previewCacheSize),
 		warm:     make(chan string, warmQueueSize),
+		scenes:   newSceneCache(sceneCacheSize),
+		renders:  preview.NewCache(renderCacheSize),
 	}
 	for i := 0; i < warmWorkers; i++ {
 		go func() {
@@ -148,9 +169,18 @@ func (s *Service) OpenFolder(dir string) (OpenResult, error) {
 		return OpenResult{}, err
 	}
 	ro := isReadOnly(dir)
+	store := edits.New(dir, ro)
+	files := make([]string, 0, len(photos))
+	for _, p := range photos {
+		files = append(files, editFile(p))
+	}
+	store.Preload(files) // one directory listing, not one stat per photo
+
+	s.scenes.clear()
 	s.mu.Lock()
 	s.dir, s.photos, s.readOnly = dir, photos, ro
 	s.rejected = map[string]bool{}
+	s.edits = store
 	res := s.stateLocked()
 	s.mu.Unlock()
 	s.emit(Event{Type: "open"})
@@ -166,11 +196,18 @@ func (s *Service) State() OpenResult {
 
 func (s *Service) stateLocked() OpenResult {
 	res := OpenResult{Dir: s.dir, ReadOnly: s.readOnly,
-		Photos: make([]PhotoDTO, len(s.photos)), Rejected: []string{}}
+		Photos: make([]PhotoDTO, len(s.photos)), Rejected: []string{}, Edited: []string{}}
+	var edited map[string]bool
+	if s.edits != nil {
+		edited = s.edits.Edited()
+	}
 	for i, p := range s.photos {
 		res.Photos[i] = PhotoDTO{ID: p.ID, Name: filepath.Base(displayFile(p)), Pair: p.Pair()}
 		if s.rejected[p.ID] {
 			res.Rejected = append(res.Rejected, p.ID)
+		}
+		if edited[edits.Key(editFile(p))] {
+			res.Edited = append(res.Edited, p.ID)
 		}
 	}
 	return res
@@ -331,6 +368,12 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("/api/reject", s.serveReject)
 	mux.HandleFunc("/api/commit", s.serveCommit)
 	mux.HandleFunc("/api/events", s.serveEvents)
+	// Editing: the developed frame, what is known about it, and the two
+	// ways an edit changes — a slider, or a button that moves them all.
+	mux.HandleFunc("/api/develop/", s.serveDevelop)
+	mux.HandleFunc("/api/developinfo/", s.serveDevelopInfo)
+	mux.HandleFunc("/api/edit", s.serveEdit)
+	mux.HandleFunc("/api/export", s.serveExport)
 	return mux
 }
 

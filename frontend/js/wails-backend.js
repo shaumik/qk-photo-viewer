@@ -15,12 +15,15 @@
     label: '',
     readOnly: false,
     serverMarks: [],
+    serverEdits: [],
     metas: [],
+    canCopy: true, // macOS pasteboard is reachable from the Go side
 
     _apply(res) {
       this.label = res.dir;
       this.readOnly = !!res.readOnly;
       this.serverMarks = res.rejected || [];
+      this.serverEdits = res.edited || [];
       this.metas = (res.photos || []).map(p => ({
         id: p.id, name: p.name, pair: p.pair, burstStart: false,
       }));
@@ -75,6 +78,13 @@
     openURL(url) {
       bridge.OpenMapURL(url);
     },
+
+    /* Develop mode does its own /api calls — the asset server serves them
+       inside the app just as it does over the LAN. Only the things a
+       browser cannot do come over the bridge. */
+    async pickExportFolder() { return bridge.PickExportFolder(); },
+    async copyPhoto(id) { return bridge.CopyPhoto(id); },
+    async reveal(path) { return bridge.RevealPath(path); },
 
     async commit(indices) {
       const ids = indices.map(i => this.metas[i].id);

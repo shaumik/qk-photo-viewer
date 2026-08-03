@@ -18,9 +18,12 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
+	"io"
 	"math"
+	"os"
 
 	"github.com/shaumik/qk-photo-viewer/internal/raw"
+	"github.com/shaumik/qk-photo-viewer/internal/tiff"
 )
 
 // Scene is a frame in scene-referred linear sRGB, already rotated to the
@@ -100,6 +103,84 @@ func FromJPEGBytes(data []byte, orientation int, maxDim int) (*Scene, error) {
 	}
 	pix, w, h = orient(pix, w, h, orientation)
 	return &Scene{W: w, H: h, Pix: pix}, nil
+}
+
+// Downscaled returns a smaller copy of the Scene, or the Scene itself if
+// it already fits. Dragging a slider renders at a reduced size and only
+// asks for the full one when the drag stops — the difference between a
+// control that tracks your hand and one that lags behind it.
+func (s *Scene) Downscaled(maxDim int) *Scene {
+	if maxDim <= 0 || (s.W <= maxDim && s.H <= maxDim) {
+		return s
+	}
+	pix, w, h := s.Pix, s.W, s.H
+	for (w > maxDim || h > maxDim) && w > 1 && h > 1 {
+		pix, w, h = halve(pix, w, h)
+	}
+	out := *s
+	out.Pix, out.W, out.H = pix, w, h
+	return &out
+}
+
+// OrientationOf reads a file's EXIF orientation, returning 1 — upright —
+// when there is none to read.
+func OrientationOf(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 1
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 1
+	}
+	var magic [2]byte
+	if _, err := f.ReadAt(magic[:], 0); err != nil {
+		return 1
+	}
+	if magic == [2]byte{0xFF, 0xD8} {
+		data, err := io.ReadAll(io.NewSectionReader(f, 0, min64(st.Size(), 1<<20)))
+		if err != nil {
+			return 1
+		}
+		if o, ok := OrientationOfJPEG(data); ok {
+			return o
+		}
+		return 1
+	}
+	t, err := tiff.Parse(f, st.Size())
+	if err != nil {
+		return 1
+	}
+	if o, ok := t.AnyInt(tiff.TagOrientation); ok && o >= 1 && o <= 8 {
+		return int(o)
+	}
+	return 1
+}
+
+// OrientationOfJPEG reads the orientation a JPEG's own EXIF declares. A
+// camera's embedded preview carries its own, and it is the one that
+// describes those pixels — the container's tag might not.
+func OrientationOfJPEG(data []byte) (int, bool) {
+	seg := findAPP1(data)
+	if seg == nil {
+		return 1, false
+	}
+	t, err := tiff.Parse(bytes.NewReader(seg), int64(len(seg)))
+	if err != nil {
+		return 1, false
+	}
+	if o, ok := t.AnyInt(tiff.TagOrientation); ok && o >= 1 && o <= 8 {
+		return int(o), true
+	}
+	return 1, false
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func cameraName(im *raw.Image) string {

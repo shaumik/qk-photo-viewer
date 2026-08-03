@@ -214,3 +214,74 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 @media (max-width:640px){.mock-chip{display:none}
   #grid .gwrap{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}}
+
+/* ---------- develop panel ----------
+   A rail beside the picture rather than an overlay on top of it: you are
+   judging colour and brightness, and a sheet floating over the image would
+   change how both read. */
+#editPanel{flex:none;width:288px;overflow-y:auto;background:var(--bg-chrome);
+           border-left:1px solid var(--line);padding:14px;
+           display:flex;flex-direction:column;gap:12px}
+#editPanel.hidden{display:none}
+#editBtn{background:color-mix(in srgb,var(--accent) 16%,var(--bg-raised));
+         border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+#editBtn:hover{background:color-mix(in srgb,var(--accent) 28%,var(--bg-raised))}
+body.editing #editBtn{background:var(--accent);color:var(--bg-well);border-color:var(--accent)}
+
+.ep-head{display:flex;align-items:center;gap:8px}
+.ep-head b{font-size:14px;letter-spacing:.02em}
+.ep-head button{margin-left:auto;padding:2px 8px;line-height:1.2}
+.ep-source{font:10px/1 var(--mono);letter-spacing:.12em;border-radius:3px;padding:3px 5px}
+.ep-source.raw{color:var(--bg-well);background:var(--ok)}
+.ep-source.approx{color:var(--bg-well);background:var(--text-dim)}
+
+.ep-auto{width:100%;padding:10px;font-size:14px;
+         background:color-mix(in srgb,var(--accent) 22%,var(--bg-raised));
+         border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.ep-auto:not(:disabled):hover{background:color-mix(in srgb,var(--accent) 36%,var(--bg-raised))}
+.ep-auto.busy{opacity:.6}
+.ep-note{font-size:11.5px;line-height:1.5;color:var(--text-dim)}
+.ep-fine{font-size:11px;line-height:1.5;color:var(--text-dim);
+         border-top:1px solid var(--line);padding-top:10px;margin-top:auto}
+
+.ep-sliders{display:flex;flex-direction:column;gap:9px}
+.ep-row label{display:flex;align-items:baseline;gap:6px;font-size:12px;
+              color:var(--text-dim);margin-bottom:2px}
+.ep-row.set label{color:var(--text)}
+.ep-row label i{font-style:normal;font-size:10.5px;color:var(--text-dim);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-row label b{margin-left:auto;font:11.5px var(--mono);font-weight:400;
+                font-variant-numeric:tabular-nums;color:var(--text-dim);white-space:nowrap}
+.ep-row.set label b{color:var(--accent)}
+.ep-row input[type=range]{width:100%;height:18px;-webkit-appearance:none;appearance:none;
+                          background:transparent;cursor:pointer;display:block}
+.ep-row input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
+                          background:var(--line)}
+.ep-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+                          width:13px;height:13px;border-radius:50%;margin-top:-5px;
+                          background:var(--text-dim);border:none}
+.ep-row.set input[type=range]::-webkit-slider-thumb{background:var(--accent)}
+.ep-row input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:var(--line)}
+.ep-row input[type=range]::-moz-range-thumb{width:13px;height:13px;border:none;
+                          border-radius:50%;background:var(--text-dim)}
+.ep-row.set input[type=range]::-moz-range-thumb{background:var(--accent)}
+
+.ep-row-btns{display:flex;gap:8px}
+.ep-row-btns button{flex:1;padding:6px 8px;font-size:12px}
+#epBefore.on{background:var(--accent);color:var(--bg-well);border-color:var(--accent)}
+.ep-wide{width:100%;padding:6px 8px;font-size:12px}
+
+/* An edited photo is marked in the filmstrip and the grid the way a
+   rejected one is, so the state of a shoot reads at a glance. */
+.thumb.edited::after,.gcell.edited::after{content:"";position:absolute;
+       right:4px;bottom:4px;width:6px;height:6px;border-radius:50%;
+       background:var(--accent);box-shadow:0 0 0 1.5px rgba(0,0,0,.55)}
+#toast a{color:var(--accent)}
+
+/* On a phone the rail becomes a sheet across the bottom: there is no room
+   beside the picture, and a thumb reaches the bottom of the screen. */
+@media (max-width:760px){
+  #editPanel{position:absolute;left:0;right:0;bottom:0;width:auto;z-index:6;
+             max-height:62%;border-left:none;border-top:1px solid var(--line)}
+  .ep-fine{display:none}
+}

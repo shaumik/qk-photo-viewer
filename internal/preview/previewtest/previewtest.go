@@ -8,7 +8,10 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"math"
 	"os"
+
+	"github.com/shaumik/qk-photo-viewer/internal/tiff/tifftest"
 )
 
 // JPEGBlob returns a fake JPEG of exactly n bytes (n >= 4): SOI marker,
@@ -134,4 +137,146 @@ func JPEGWithExifThumb(thumb []byte, body int) []byte {
 	}
 	b.Write([]byte{0xFF, 0xD9})
 	return b.Bytes()
+}
+
+/* ---------- synthetic RAW ----------
+
+The fixtures above are containers with JPEGs inside them, which is all the
+culling path ever reads. Developing needs the other thing a camera file
+holds: the sensor's own mosaic. DemoRAW writes one, so the demo shoot and
+the end-to-end tests exercise the real decode-demosaic-develop path rather
+than quietly falling back to the preview. */
+
+// demoScene is a landscape with a hot sun and a dark foreground, exposed
+// about a stop and a half under — a photograph with something wrong with
+// it, which is the only kind worth pointing an editor at. idx moves the
+// sun and the white balance so a shoot is not twelve copies of one frame.
+func demoScene(fx, fy float64, idx int) (float64, float64, float64) {
+	const horizon = 0.46
+	var r, g, b float64
+	if fy < horizon {
+		t := fy / horizon
+		base := 0.28 + 0.55*t*t
+		r, g, b = base*0.5, base*0.68, base
+		sx := 0.22 + 0.06*float64(idx%5)
+		d := math.Hypot(fx-sx, (fy-0.15)*1.7)
+		switch {
+		case d < 0.055:
+			r, g, b = 1, 0.97, 0.86 // saturates the sensor
+		case d < 0.26:
+			glow := (0.26 - d) / 0.2
+			glow *= glow * 0.75
+			r, g, b = r+glow, g+glow*0.92, b+glow*0.62
+		}
+	} else {
+		t := (fy - horizon) / (1 - horizon)
+		base := 0.07 - 0.045*t
+		r, g, b = base*1.5, base*1.15, base*0.62
+		// A ridge line, and trees with hard edges for sharpening to bite on.
+		ridge := horizon + 0.03*math.Sin(fx*13+float64(idx))
+		if fy > ridge && fy < ridge+0.06 {
+			r, g, b = r*0.35, g*0.35, b*0.35
+		}
+		if math.Mod(fx*24+float64(idx), 3) < 1 && fy > horizon+0.12 {
+			r, g, b = r*0.55, g*0.6, b*0.55
+		}
+	}
+	// A touch of texture, so the frame is not synthetically clean. Kept
+	// well below the sampling rate: a pattern near it would alias against
+	// the colour filter array and make the fixture a moire test.
+	n := math.Sin(fx*37.1+fy*19.7) * 0.008
+	// Underexposed, warm, and differently so from frame to frame.
+	k := 0.34 + 0.08*float64(idx%4)
+	warm := 1 + 0.12*float64(idx%3)
+	return clamp01(r*k*warm + n), clamp01(g*k + n), clamp01(b*k/warm + n)
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+// sRGBFromXYZ is the standard matrix, scaled the way DNG's ColorMatrix tag
+// wants it. Writing it into the fixture makes the develop pipeline's colour
+// conversion the identity, so the demo comes out the colour it was drawn.
+var sRGBFromXYZ = [9]int32{32406, -15372, -4986, -9689, 18758, 415, 557, -2040, 10570}
+
+// DemoRAW writes a synthetic ARW at path: an uncompressed 16-bit CFA mosaic
+// of demoScene, plus the JPEG preview a camera would have embedded beside
+// it, rendered from the same scene.
+func DemoRAW(path string, w, h, idx int) error {
+	w, h = w&^1, h&^1
+	const black, white = 512.0, 16300.0
+
+	sensor := make([]byte, w*h*2)
+	prev := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r, g, bl := demoScene((float64(x)+0.5)/float64(w), (float64(y)+0.5)/float64(h), idx)
+			// The mosaic keeps only the colour under each filter, RGGB.
+			lin := [3]float64{r, g, bl}
+			c := 1
+			if y&1 == 0 && x&1 == 0 {
+				c = 0
+			} else if y&1 == 1 && x&1 == 1 {
+				c = 2
+			}
+			v := black + lin[c]*(white-black)
+			binary.LittleEndian.PutUint16(sensor[(y*w+x)*2:], uint16(v))
+			// The camera's preview is the same scene, tone-mapped the way a
+			// camera would: brighter than the RAW renders by default.
+			prev.Set(x, y, color.RGBA{
+				R: encode8(r * 1.9), G: encode8(g * 1.9), B: encode8(bl * 1.9), A: 255,
+			})
+		}
+	}
+	var pj bytes.Buffer
+	if err := jpeg.Encode(&pj, prev, &jpeg.Options{Quality: 88}); err != nil {
+		return err
+	}
+
+	b := tifftest.New()
+	mosaic := b.AddBlob(sensor)
+	preview := b.AddBlob(pj.Bytes())
+	root := b.AddIFD()
+	sub := b.AddIFD()
+	sub.BlobOffset(0x0201, preview).Long(0x0202, int64(pj.Len()))
+
+	cm := make([][2]int32, 9)
+	for i, v := range sRGBFromXYZ {
+		cm[i] = [2]int32{v, 10000}
+	}
+	root.ASCII(0x010F, "SONY").
+		ASCII(0x0110, "QK-DEMO").
+		Short(0x0106, 32803). // CFA
+		Short(0x0100, int64(w)).
+		Short(0x0101, int64(h)).
+		Short(0x0102, 16).
+		Short(0x0103, 1). // uncompressed
+		Short(0x0115, 1).
+		Short(0x0112, 1).
+		Byte(0x828E, 0, 1, 1, 2). // RGGB
+		BlobOffset(0x0111, mosaic).
+		Long(0x0117, int64(len(sensor))).
+		Short(0x7310, int64(black), int64(black), int64(black), int64(black)).
+		Short(0x787F, int64(white)).
+		SShort(0x7313, 1024, 1024, 1024, 1024). // neutral: the scene is the truth
+		SRational(0xC621, cm...).
+		SubIFD(sub)
+	return os.WriteFile(path, b.Bytes(), 0o644)
+}
+
+func encode8(v float64) uint8 {
+	v = clamp01(v)
+	if v <= 0.0031308 {
+		v *= 12.92
+	} else {
+		v = 1.055*math.Pow(v, 1/2.4) - 0.055
+	}
+	return uint8(v*255 + 0.5)
 }

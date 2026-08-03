@@ -9,6 +9,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/shaumik/qk-photo-viewer/internal/desktop"
 	"github.com/shaumik/qk-photo-viewer/internal/remote"
 	"github.com/shaumik/qk-photo-viewer/internal/server"
 )
@@ -96,6 +97,44 @@ func (a *App) StartRemote() (RemoteInfo, error) {
 		URL:     a.remote.URL,
 		QR:      "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
 	}, nil
+}
+
+// PickExportFolder asks where developed JPEGs should go. Returns "" if the
+// user cancels, which the caller reads as "use the default".
+func (a *App) PickExportFolder() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Where should the edited photos go?",
+	})
+}
+
+// ExportPhoto develops one photo at full resolution and writes a JPEG.
+// dest "" puts it beside the shoot.
+func (a *App) ExportPhoto(id, dest string) (server.ExportResult, error) {
+	return a.svc.ExportOne(id, dest)
+}
+
+// ExportPhotos develops a list of photos, or the whole keeper list when
+// ids is empty. It returns as soon as the work is queued; progress arrives
+// as events.
+func (a *App) ExportPhotos(ids []string, dest string) (server.ExportResult, error) {
+	return a.svc.ExportAll(ids, dest)
+}
+
+// CopyPhoto puts the developed photo on the clipboard, ready to paste into
+// a message. Not every platform can do this; the UI offers export instead
+// where it cannot.
+func (a *App) CopyPhoto(id string) error {
+	data, err := a.svc.ExportedBytes(id)
+	if err != nil {
+		return err
+	}
+	return desktop.CopyJPEG(data)
+}
+
+// RevealPath shows a file or folder in the Finder — offered after an
+// export, so the photos are one click away instead of somewhere.
+func (a *App) RevealPath(path string) error {
+	return desktop.Reveal(path)
 }
 
 // OpenMapURL opens a photo's location in the default browser. Restricted

@@ -17,6 +17,7 @@
     <span id="roChip" class="hidden">READ-ONLY</span>
     <div class="counter"><span id="pos">1</span> <span>/</span> <span id="total">0</span></div>
     <span class="rej-chip empty" id="rejChip">0 rejected</span>
+    <button id="editBtn" title="Develop this photo (E)">✨ Develop</button>
     <button id="commitBtn" disabled>Commit rejects</button>
     <button id="remoteBtn" class="hidden" title="Cull from your phone">📱 Phone</button>
     <button id="helpBtn" title="Shortcuts">?</button>
@@ -36,6 +37,28 @@
     <button class="navbtn" id="nextBtn" aria-label="Next">›</button>
     <div id="hintBar"><b>←</b> <b>→</b> navigate&nbsp;&nbsp;<b>X</b> reject&nbsp;&nbsp;<b>Z</b> 1:1 zoom&nbsp;&nbsp;<b>G</b> grid&nbsp;&nbsp;<b>?</b> help</div>
 
+    <aside id="editPanel" class="hidden">
+      <div class="ep-head">
+        <b>Develop</b>
+        <span id="epSource" class="ep-source"></span>
+        <button id="epClose" title="Back to culling (E)">✕</button>
+      </div>
+      <button id="epAuto" class="ep-auto" title="Work it out for me (A)">✨ Auto</button>
+      <p class="ep-note" id="epNote"></p>
+      <div class="ep-sliders" id="epSliders"></div>
+      <div class="ep-row-btns">
+        <button id="epBefore" title="Hold to see the original (\)">Hold to compare</button>
+        <button id="epReset" title="Back to as shot (R)" disabled>Reset</button>
+      </div>
+      <div class="ep-row-btns ep-export">
+        <button id="epExport" title="Full-size JPEG (⌘E)">Export JPEG</button>
+        <button id="epCopy" class="hidden" title="Copy the photo (⌘C)">Copy</button>
+      </div>
+      <button id="epExportAll" class="ep-wide" title="Every keeper, developed (⌘⇧E)">Export all keepers</button>
+      <p class="ep-fine">Your originals are never changed. Edits are saved
+         beside them and can be undone at any time.</p>
+    </aside>
+
     <div id="grid" class="overlay hidden"><div class="gwrap"></div></div>
 
     <div id="help" class="overlay hidden">
@@ -49,6 +72,13 @@
           <tr><td><kbd>Z</kbd> or click</td><td>Toggle 1:1 zoom — move mouse to pan, check focus</td></tr>
           <tr><td><kbd>G</kbd></td><td>Grid overview</td></tr>
           <tr><td><kbd>I</kbd></td><td>Photo info — camera, exposure, location</td></tr>
+          <tr><td><kbd>E</kbd></td><td>Develop this photo — RAW editing, sliders and all</td></tr>
+          <tr><td><kbd>A</kbd></td><td>Auto-develop: let QK work out the settings</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Reset the photo back to as shot</td></tr>
+          <tr><td><kbd>\</kbd></td><td>Toggle the before/after comparison</td></tr>
+          <tr><td><kbd>⌘</kbd><kbd>E</kbd></td><td>Export a full-size JPEG of this photo</td></tr>
+          <tr><td><kbd>⌘</kbd><kbd>⇧</kbd><kbd>E</kbd></td><td>Export every keeper, developed</td></tr>
+          <tr><td><kbd>⌘</kbd><kbd>C</kbd></td><td>Copy the developed photo, ready to paste</td></tr>
           <tr><td><kbd>⌘</kbd><kbd>⏎</kbd></td><td>Commit rejects (move off the keeper list)</td></tr>
           <tr><td><kbd>⌘</kbd><kbd>O</kbd></td><td>Open a different card folder</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Close overlays</td></tr>
@@ -108,5 +138,6 @@
 <script src="js/http-backend.js"></script>
 <script src="js/wails-backend.js"></script>
 <script src="js/app.js"></script>
+<script src="js/edit.js"></script>
 </body>
 </html>
