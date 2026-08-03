@@ -238,6 +238,7 @@ document.addEventListener('keydown', e => {
   }
   const k = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { openCommit(); e.preventDefault(); return; }
+  if ((e.metaKey || e.ctrlKey) && k === 'o' && backend.canPick) { pickAndOpen(); e.preventDefault(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (k === 'arrowright' || k === 'arrowdown') show(cur + 1);
   else if (k === 'arrowleft' || k === 'arrowup') show(cur - 1);
@@ -270,10 +271,29 @@ function buildPhotos(metas, marked) {
   $('pathLabel').textContent = backend.label;
   $('roChip').classList.toggle('hidden', !backend.readOnly);
   $('total').textContent = photos.length;
+  $('emptyState').classList.toggle('hidden', photos.length > 0 || !backend.canPick);
   if (!photos.length) {
     $('fname').textContent = 'no photos found';
     $('pairChip').classList.add('hidden');
+  } else {
+    $('pairChip').classList.remove('hidden');
   }
+}
+
+/* Open (or switch to) a card folder — from the header button, the empty
+   state, or ⌘O. Cancelling the picker leaves the current session alone. */
+async function pickAndOpen() {
+  let metas;
+  try {
+    metas = await backend.open();
+  } catch (e) {
+    toast('⚠ ' + (e.message || e));
+    return;
+  }
+  if (metas === null) return; // picker cancelled
+  buildPhotos(metas, new Set(backend.serverMarks || []));
+  if (photos.length) { await show(0); }
+  refreshRejUI();
 }
 
 $('rescanBtn').onclick = async () => {
@@ -320,11 +340,16 @@ $('remoteStop').onclick = async () => {
   $('pathLabel').textContent = backend.label;
   if (backend.isMock) $('mockChip').classList.remove('hidden');
   if (backend.startRemote) $('remoteBtn').classList.remove('hidden');
+  if (backend.canPick) {
+    $('openBtn').classList.remove('hidden');
+    $('openBtn').onclick = pickAndOpen;
+    $('emptyOpen').onclick = pickAndOpen;
+  }
   if (backend.isRemote) $('remoteChip').textContent = 'REMOTE · ' + location.hostname;
   if (coarse) $('hintBar').innerHTML =
     '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
 
-  const metas = await backend.open();
+  const metas = (await backend.open()) || [];
   buildPhotos(metas, new Set(backend.serverMarks || []));
   backend.onEvent?.(onSyncEvent);
   if (!photos.length) return;

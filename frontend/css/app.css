@@ -138,6 +138,11 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 #toast.on{opacity:1}
 #toast b{color:var(--ok)}
 
+/* empty state: nothing open (launch cancelled, or switching cards) */
+#emptyState{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;
+            gap:14px;align-items:center;justify-content:center;color:var(--text-dim)}
+#emptyOpen{padding:10px 18px;font-size:14px;border-radius:8px}
+
 /* phone remote QR sheet */
 .sheet-center{text-align:center}
 .row-center{justify-content:center!important}
@@ -165,7 +170,7 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 #remoteChip::before{content:'';width:6px;height:6px;border-radius:99px;background:var(--ok)}
 #mbar{display:none}
 @media (pointer:coarse){
-  .navbtn,.path,#commitBtn,#helpBtn,#remoteBtn{display:none}
+  .navbtn,.path,#commitBtn,#helpBtn,#remoteBtn,#openBtn{display:none}
   header{gap:8px;padding:0 10px}
   #remoteChip{display:inline-flex;min-width:0;overflow:hidden;flex:0 1 auto}
   #mbar{display:flex;align-items:center;gap:10px;flex:none;
