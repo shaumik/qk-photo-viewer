@@ -48,31 +48,68 @@ func TestScanPairsAndSorts(t *testing.T) {
 	}
 }
 
-func TestScanDCIMParentWithRolledOverFolders(t *testing.T) {
+func TestScanDescendsIntoSubfolders(t *testing.T) {
 	// Cameras roll to a new numbered folder every 9999 shots, and filenames
 	// restart — the same DSC number can exist in both. Opening the DCIM
-	// parent must find both and keep their IDs distinct.
+	// parent (or any organized folder) must find everything, with IDs kept
+	// distinct by folder prefix.
 	dir := t.TempDir()
-	for _, sub := range []string{"100MSDCF", "101MSDCF"} {
+	for _, sub := range []string{"100MSDCF", "101MSDCF", "keepers"} {
 		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		touch(t, filepath.Join(dir, sub), "DSC09999.ARW")
 	}
-	if err := os.Mkdir(filepath.Join(dir, "MISC"), 0o755); err != nil { // non-DCF: ignored
-		t.Fatal(err)
-	}
-	touch(t, filepath.Join(dir, "MISC"), "DSC00001.ARW")
+	touch(t, filepath.Join(dir, "100MSDCF"), "DSC09999.ARW")
+	touch(t, filepath.Join(dir, "101MSDCF"), "DSC09999.ARW")
+	touch(t, filepath.Join(dir, "keepers"), "DSC00001.ARW")
 
 	photos, err := Scan(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(photos) != 2 {
-		t.Fatalf("got %d photos, want 2: %+v", len(photos), photos)
+	if len(photos) != 3 {
+		t.Fatalf("got %d photos, want 3: %+v", len(photos), photos)
 	}
-	if photos[0].ID != "100MSDCF:DSC09999" || photos[1].ID != "101MSDCF:DSC09999" {
-		t.Errorf("rolled-over IDs should be folder-prefixed: %+v", photos)
+	if photos[0].ID != "100MSDCF:DSC09999" || photos[1].ID != "101MSDCF:DSC09999" ||
+		photos[2].ID != "keepers:DSC00001" {
+		t.Errorf("IDs should be folder-prefixed and sorted: %+v", photos)
+	}
+}
+
+func TestScanDepthLimitAndRejectsFolder(t *testing.T) {
+	dir := t.TempDir()
+	// Card-root shape: root/DCIM/100MSDCF/photo — three levels, included.
+	deep := filepath.Join(dir, "DCIM", "100MSDCF")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, deep, "DSC00001.ARW")
+	// Third folder level: still in scope.
+	third := filepath.Join(deep, "extra")
+	if err := os.MkdirAll(third, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, third, "DSC00002.ARW")
+	// Fourth level: past the limit, ignored.
+	tooDeep := filepath.Join(third, "deeper")
+	if err := os.MkdirAll(tooDeep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, tooDeep, "DSC00004.ARW")
+	// Previously committed rejects must never resurface in a scan.
+	rej := filepath.Join(dir, RejectsDirName)
+	if err := os.MkdirAll(rej, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, rej, "DSC00003.ARW")
+
+	photos, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 2 || photos[0].ID != "DCIM:100MSDCF:DSC00001" ||
+		photos[1].ID != "DCIM:100MSDCF:extra:DSC00002" {
+		t.Fatalf("want the two in-scope photos, got: %+v", photos)
 	}
 }
 

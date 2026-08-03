@@ -44,6 +44,7 @@ async function show(i) {
   cur = Math.max(0, Math.min(photos.length - 1, i));
   const p = photos[cur], my = ++showSeq;
   $('pos').textContent = cur + 1;
+  $('scrub').value = cur + 1;
   $('fname').textContent = p.name;
   $('pairChip').textContent = p.pair;
   main.classList.toggle('rejected', !!p.rej); stage.classList.toggle('rejected', !!p.rej);
@@ -54,6 +55,10 @@ async function show(i) {
   const slow = setTimeout(() => { if (my === showSeq) stage.classList.add('loading'); }, 180);
   let el;
   try {
+    if (scrubbing) { // mid-drag: settle briefly so only the frame you stop on loads
+      await new Promise(r => setTimeout(r, 90));
+      if (my !== showSeq) { clearTimeout(slow); return; }
+    }
     el = await fullFor(cur);
   } catch (e) {
     clearTimeout(slow); stage.classList.remove('loading');
@@ -218,6 +223,10 @@ function toast(html) {
 /* ---------- wiring ---------- */
 $('prevBtn').onclick = () => show(cur - 1);
 $('nextBtn').onclick = () => show(cur + 1);
+/* position scrubber: drag straight to photo N of a thousand */
+let scrubbing = false;
+$('scrub').addEventListener('input', e => { scrubbing = true; show(+e.target.value - 1); });
+$('scrub').addEventListener('change', e => { scrubbing = false; show(+e.target.value - 1); });
 $('commitBtn').onclick = openCommit;
 $('confirmCommit').onclick = doCommit;
 $('cancelCommit').onclick = () => modalEl.classList.add('hidden');
@@ -240,8 +249,10 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { openCommit(); e.preventDefault(); return; }
   if ((e.metaKey || e.ctrlKey) && k === 'o' && backend.canPick) { pickAndOpen(); e.preventDefault(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (k === 'arrowright' || k === 'arrowdown') show(cur + 1);
-  else if (k === 'arrowleft' || k === 'arrowup') show(cur - 1);
+  if (k === 'arrowright' || k === 'arrowdown') show(cur + (e.shiftKey ? 25 : 1));
+  else if (k === 'arrowleft' || k === 'arrowup') show(cur - (e.shiftKey ? 25 : 1));
+  else if (k === 'home') show(0);
+  else if (k === 'end') show(photos.length - 1);
   else if (k === 'x') toggleReject();
   else if (k === 'z') setZoom(!zoomed);
   else if (k === 'g') toggleGrid(gridEl.classList.contains('hidden'));
@@ -257,10 +268,10 @@ function buildPhotos(metas, marked) {
   photos = metas.map((m, i) => {
     const t = document.createElement('div'); t.className = 'thumb';
     t.innerHTML = `${m.burstStart && i ? '<span class="bstart"></span>' : ''}` +
-      `<img src="${backend.thumbURL(i)}" alt=""><span class="x">✕</span>`;
+      `<img loading="lazy" decoding="async" src="${backend.thumbURL(i)}" alt=""><span class="x">✕</span>`;
     t.onclick = () => show(photos.indexOf(p)); strip.appendChild(t);
     const g = document.createElement('div'); g.className = 'gcell';
-    g.innerHTML = `<img src="${backend.thumbURL(i)}" alt=""><span class="x">✕</span>` +
+    g.innerHTML = `<img loading="lazy" decoding="async" src="${backend.thumbURL(i)}" alt=""><span class="x">✕</span>` +
       `<span class="nm">${m.name}</span>`;
     g.onclick = () => { show(photos.indexOf(p)); toggleGrid(false); };
     const p = { ...m, rej: !!(marked && marked.has(m.id)), el: t, gel: g };
@@ -271,6 +282,9 @@ function buildPhotos(metas, marked) {
   $('pathLabel').textContent = backend.label;
   $('roChip').classList.toggle('hidden', !backend.readOnly);
   $('total').textContent = photos.length;
+  $('scrub').max = Math.max(1, photos.length);
+  $('scrub').value = 1;
+  $('scrub').disabled = photos.length < 2;
   $('emptyState').classList.toggle('hidden', photos.length > 0 || !backend.canPick);
   if (!photos.length) {
     $('fname').textContent = 'no photos found';
