@@ -56,13 +56,25 @@ a trackpad.
 
 ## Install
 
-1. Download `QK-macos.zip` from the
-   [latest release](../../releases/latest) and drag `QK.app` into
-   Applications. Works on Intel and Apple Silicon.
-2. First launch: macOS will balk because the app isn't code-signed.
-   Click **Done**, then **System Settings → Privacy & Security → Open
-   Anyway**. One time only.
-3. Plug in your card, open the `DCIM` folder, cull.
+Paste this in Terminal — it installs (or updates) the latest release with
+no security prompt, since terminal downloads skip macOS quarantine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/shaumik/qk-photo-viewer/main/install.sh | sh
+```
+
+Works on Intel and Apple Silicon. Re-run it any time to update.
+
+<details>
+<summary>Prefer downloading by hand?</summary>
+
+Grab `QK-macos.zip` from the [latest release](../../releases/latest) and
+drag `QK.app` into Applications. Browser downloads trigger Gatekeeper
+once (the app isn't code-signed): click **Done**, then
+**System Settings → Privacy & Security → Open Anyway**.
+</details>
+
+Then plug in your card, open the `DCIM` folder, cull.
 
 ---
 
