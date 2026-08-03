@@ -7,6 +7,8 @@ let backend = null; // assigned in init before anything runs
 const coarse = matchMedia('(pointer:coarse)').matches;
 
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const stage = $('stage'), main = $('main'), strip = $('strip');
 const gwrap = document.querySelector('#grid .gwrap');
 const gridEl = $('grid'), helpEl = $('help'), modalEl = $('modal');
@@ -70,6 +72,7 @@ async function show(i) {
   stage.replaceChildren(el);
   setZoom(zoomed);                          // zoom persists across frames: flip a burst at 1:1 to compare focus
   prefetch(cur);
+  updateInfoPanel();
 }
 
 async function handleLoadError(p, err) {
@@ -143,7 +146,15 @@ function pan(mx, my) {
     `translate(${-rx * Math.max(0, iw - r.width)}px,${-ry * Math.max(0, ih - r.height)}px)`;
 }
 stage.addEventListener('mousemove', e => { lastMX = e.clientX; lastMY = e.clientY; pan(e.clientX, e.clientY); });
-stage.addEventListener('click', () => { if (!coarse) setZoom(!zoomed); });
+/* A drag while zoomed is panning, not a request to unzoom: only a clean
+   click (barely any movement between press and release) toggles zoom. */
+let downX = 0, downY = 0;
+stage.addEventListener('mousedown', e => { downX = e.clientX; downY = e.clientY; });
+stage.addEventListener('click', e => {
+  if (coarse) return;
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  setZoom(!zoomed);
+});
 
 /* ---------- touch: swipe ⟷ navigate, swipe ↑ reject / ↓ un-reject,
                double-tap zoom, drag pans when zoomed ---------- */
@@ -169,6 +180,44 @@ stage.addEventListener('touchend', e => {
     if (now - lastTap < 320) { setZoom(!zoomed); lastTap = 0; } else lastTap = now;
   }
 });
+
+/* ---------- photo info panel ---------- */
+const metaCache = new Map();
+function toggleInfo() {
+  $('infoPanel').classList.toggle('hidden');
+  updateInfoPanel();
+}
+async function updateInfoPanel() {
+  const panel = $('infoPanel');
+  if (panel.classList.contains('hidden') || !photos.length || !backend.meta) return;
+  const p = photos[cur];
+  let m = metaCache.get(p.id);
+  if (!m) {
+    panel.innerHTML = '<div>…</div>';
+    try { m = await backend.meta(cur); } catch (e) { m = {}; }
+    metaCache.set(p.id, m);
+  }
+  if (photos[cur] !== p) return; // user moved on while we were reading
+  const rows = [];
+  if (m.camera) rows.push(esc(m.camera));
+  if (m.taken) rows.push(esc(m.taken));
+  const exp = [m.shutter, m.aperture, m.iso ? 'ISO ' + m.iso : '', m.focal]
+    .filter(Boolean).join(' · ');
+  if (exp) rows.push(esc(exp));
+  if (m.lat != null && m.lng != null) {
+    rows.push(`<a href="#" id="mapLink">📍 ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</a>`);
+  }
+  panel.innerHTML = rows.length
+    ? rows.map(r => `<div>${r}</div>`).join('')
+    : '<div>no metadata in this file</div>';
+  const link = document.getElementById('mapLink');
+  if (link) link.onclick = ev => {
+    ev.preventDefault();
+    const url = `https://maps.apple.com/?ll=${m.lat},${m.lng}&q=${encodeURIComponent(p.name)}`;
+    if (backend.openURL) backend.openURL(url); else window.open(url, '_blank');
+  };
+}
+$('hud').onclick = toggleInfo;
 
 /* ---------- overlays ---------- */
 function toggleGrid(on) {
@@ -240,6 +289,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     gridEl.classList.add('hidden'); helpEl.classList.add('hidden');
     modalEl.classList.add('hidden'); $('remoteSheet').classList.add('hidden');
+    $('infoPanel').classList.add('hidden');
     setZoom(false); return;
   }
   if (!modalEl.classList.contains('hidden')) {
@@ -255,6 +305,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'end') show(photos.length - 1);
   else if (k === 'x') toggleReject();
   else if (k === 'z') setZoom(!zoomed);
+  else if (k === 'i') toggleInfo();
   else if (k === 'g') toggleGrid(gridEl.classList.contains('hidden'));
   else if (k === '?') helpEl.classList.toggle('hidden');
   else return;

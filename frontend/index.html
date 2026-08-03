@@ -28,7 +28,8 @@
       <p>No folder open.</p>
       <button id="emptyOpen">Open your card's folder…</button>
     </div>
-    <div class="hud"><span id="fname">—</span><span class="pair-chip" id="pairChip">ARW +JPG</span></div>
+    <div class="hud" id="hud" title="Photo info (I)"><span id="fname">—</span><span class="pair-chip" id="pairChip">ARW +JPG</span></div>
+    <div id="infoPanel" class="hidden"></div>
     <div id="zoomTag">1:1</div>
     <div id="rejBadge">REJECT</div>
     <button class="navbtn" id="prevBtn" aria-label="Previous">‹</button>
@@ -47,6 +48,7 @@
           <tr><td><kbd>X</kbd></td><td>Mark / unmark reject</td></tr>
           <tr><td><kbd>Z</kbd> or click</td><td>Toggle 1:1 zoom — move mouse to pan, check focus</td></tr>
           <tr><td><kbd>G</kbd></td><td>Grid overview</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Photo info — camera, exposure, location</td></tr>
           <tr><td><kbd>⌘</kbd><kbd>⏎</kbd></td><td>Commit rejects (move off the keeper list)</td></tr>
           <tr><td><kbd>⌘</kbd><kbd>O</kbd></td><td>Open a different card folder</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Close overlays</td></tr>
