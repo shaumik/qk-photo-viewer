@@ -67,6 +67,15 @@
       bridge.SetReject(id, rejected).catch(() => {});
     },
 
+    async meta(i) {
+      const r = await fetch('/api/meta/' + encodeURIComponent(this.metas[i].id));
+      return r.ok ? r.json() : {};
+    },
+
+    openURL(url) {
+      bridge.OpenMapURL(url);
+    },
+
     async commit(indices) {
       const ids = indices.map(i => this.metas[i].id);
       const res = await bridge.CommitRejects(ids);

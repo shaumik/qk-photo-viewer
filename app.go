@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io/fs"
+	"strings"
 
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -95,6 +96,15 @@ func (a *App) StartRemote() (RemoteInfo, error) {
 		URL:     a.remote.URL,
 		QR:      "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
 	}, nil
+}
+
+// OpenMapURL opens a photo's location in the default browser. Restricted
+// to the map hosts the info panel links to.
+func (a *App) OpenMapURL(url string) {
+	if strings.HasPrefix(url, "https://maps.apple.com/") ||
+		strings.HasPrefix(url, "https://www.google.com/maps") {
+		runtime.BrowserOpenURL(a.ctx, url)
+	}
 }
 
 // StopRemote ends the LAN session; connected phones lose access.

@@ -60,6 +60,11 @@ window.QKHttpBackend = {
         return im;
       },
 
+      async meta(i) {
+        const r = await fetch('/api/meta/' + encodeURIComponent(this.metas[i].id));
+        return r.ok ? r.json() : {};
+      },
+
       setReject(id, rejected) {
         fetch('/api/reject', {
           method: 'POST',

@@ -327,6 +327,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("/api/thumb/", s.serveImage(false))
 	mux.HandleFunc("/api/preview/", s.serveImage(true))
 	mux.HandleFunc("/api/photos", s.servePhotos)
+	mux.HandleFunc("/api/meta/", s.serveMeta)
 	mux.HandleFunc("/api/reject", s.serveReject)
 	mux.HandleFunc("/api/commit", s.serveCommit)
 	mux.HandleFunc("/api/events", s.serveEvents)
@@ -340,6 +341,30 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func (s *Service) servePhotos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.State())
+}
+
+// serveMeta returns a photo's shooting metadata (camera, exposure, GPS).
+// Files without EXIF return an empty object — that's normal, not an error.
+func (s *Service) serveMeta(w http.ResponseWriter, r *http.Request) {
+	id := path.Base(r.URL.Path)
+	s.mu.Lock()
+	file := ""
+	for _, p := range s.photos {
+		if p.ID == id {
+			file = displayFile(p)
+			break
+		}
+	}
+	s.mu.Unlock()
+	if file == "" {
+		http.NotFound(w, r)
+		return
+	}
+	m, err := preview.ReadMeta(file)
+	if err != nil {
+		m = preview.Meta{} // unreadable right now: show nothing rather than fail
+	}
+	writeJSON(w, m)
 }
 
 func (s *Service) serveReject(w http.ResponseWriter, r *http.Request) {

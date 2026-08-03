@@ -118,6 +118,22 @@ window.QKMockBackend = (function () {
       return c;
     },
 
+    async meta(i) {
+      const p = shots[i];
+      if (!p) return {};
+      const t = new Date(Date.UTC(2026, 7, 2, 16, 40, 0) + i * 1800 * 1000);
+      return {
+        camera: 'SONY ILCE-6000',
+        taken: t.toISOString().slice(0, 19).replace('T', ' '),
+        shutter: p.soft ? '1/60s' : '1/2000s',
+        aperture: 'f/5.6',
+        iso: p.soft ? 800 : 400,
+        focal: '210mm',
+        lat: 37.8199 + (i % 7) * 2e-4,
+        lng: -122.4783 + (i % 5) * 2e-4,
+      };
+    },
+
     async commit(indices) {
       const movedIds = indices.map(i => shots[i].name);
       const gone = new Set(indices);

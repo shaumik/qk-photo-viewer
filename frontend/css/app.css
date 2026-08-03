@@ -15,7 +15,9 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg-well);color:var(--text);font:13px/1.45 var(--sans);
-     overflow:hidden;-webkit-font-smoothing:antialiased}
+     overflow:hidden;-webkit-font-smoothing:antialiased;
+     -webkit-user-select:none;user-select:none} /* app chrome, not a document */
+img{-webkit-user-drag:none}
 button{font:inherit;color:inherit;background:var(--bg-raised);border:1px solid var(--line);
        border-radius:6px;padding:5px 12px;cursor:pointer}
 button:hover{border-color:#3c3c44}
@@ -54,8 +56,17 @@ main{position:relative;flex:1;min-height:0;display:flex}
 #stage.rejected canvas,#stage.rejected img{opacity:.45}
 
 .hud{position:absolute;left:14px;top:12px;display:flex;align-items:center;gap:8px;
-     font-family:var(--mono);font-size:12px;pointer-events:none;
+     font-family:var(--mono);font-size:12px;cursor:pointer;z-index:3;
      text-shadow:0 1px 4px rgba(0,0,0,.8)}
+
+/* photo info: camera, exposure, location (I, or click the filename) */
+#infoPanel{position:absolute;left:14px;top:40px;z-index:4;display:flex;
+           flex-direction:column;gap:4px;max-width:300px;
+           font:11.5px/1.5 var(--mono);color:var(--text);
+           background:rgba(23,23,26,.9);border:1px solid var(--line);
+           border-radius:8px;padding:10px 13px}
+#infoPanel a{color:var(--accent);text-decoration:none}
+#infoPanel a:hover{text-decoration:underline}
 .pair-chip{font-size:10px;letter-spacing:.08em;color:var(--text-dim);
            border:1px solid var(--line);border-radius:3px;padding:2px 5px;
            background:rgba(14,14,16,.6)}
@@ -166,7 +177,8 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
 .qr{width:220px;height:220px;display:block;margin:8px auto 10px;
     background:#fff;padding:10px;border-radius:8px}
 .remote-url{font-family:var(--mono);font-size:11px;color:var(--text-dim);
-            word-break:break-all;margin-bottom:6px}
+            word-break:break-all;margin-bottom:6px;
+            -webkit-user-select:text;user-select:text} /* copyable */
 
 /* slow-media loading pip: shows only when a frame takes >180ms */
 #stage.loading::after{content:'';position:absolute;right:16px;bottom:16px;
