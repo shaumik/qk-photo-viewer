@@ -73,6 +73,7 @@ async function show(i) {
   if (my !== showSeq) return;               // a newer frame won the race
   stage.replaceChildren(el);
   setZoom(zoomed);                          // zoom persists across frames: flip a burst at 1:1 to compare focus
+  window.QKCrop?.relayout();
   prefetch(cur);
   updateInfoPanel();
 }
@@ -158,6 +159,7 @@ let downX = 0, downY = 0;
 stage.addEventListener('mousedown', e => { downX = e.clientX; downY = e.clientY; });
 stage.addEventListener('click', e => {
   if (coarse) return;
+  if (document.body.classList.contains('cropping')) return; // dragging a frame, not zooming
   if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
   setZoom(!zoomed);
 });
@@ -166,6 +168,7 @@ stage.addEventListener('click', e => {
                double-tap zoom, drag pans when zoomed ---------- */
 let tsX = 0, tsY = 0, tMoved = false, lastTap = 0;
 stage.addEventListener('touchstart', e => {
+  if (document.body.classList.contains('cropping')) return;
   const t = e.touches[0]; tsX = t.clientX; tsY = t.clientY; tMoved = false;
 }, { passive: true });
 stage.addEventListener('touchmove', e => {
@@ -174,6 +177,7 @@ stage.addEventListener('touchmove', e => {
   if (zoomed) { lastMX = t.clientX; lastMY = t.clientY; pan(t.clientX, t.clientY); }
 }, { passive: false });
 stage.addEventListener('touchend', e => {
+  if (document.body.classList.contains('cropping')) return;
   const t = e.changedTouches[0], dx = t.clientX - tsX, dy = t.clientY - tsY;
   if (!zoomed && Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.3) { show(cur + (dx < 0 ? 1 : -1)); return; }
   if (!zoomed && Math.abs(dy) > 56 && Math.abs(dy) > Math.abs(dx) * 1.3) {

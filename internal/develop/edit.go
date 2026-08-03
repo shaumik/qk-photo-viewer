@@ -22,6 +22,20 @@ type Edit struct {
 	Vibrance   float64 `json:"vibrance"` // saturation, weighted to dull colours
 	Clarity    float64 `json:"clarity"`  // local contrast, the "pop" control
 	Sharpen    float64 `json:"sharpen"`
+
+	// Where the picture's edges are, and what the lens did to what is
+	// inside them. Distortion and Vignette undo the lens; the camera does
+	// this for its own JPEG and leaves the RAW to whoever opens it.
+	Distortion float64 `json:"distortion"` // positive straightens barrel bowing
+	Vignette   float64 `json:"vignette"`   // positive brightens the corners
+	Rotate     float64 `json:"rotate"`     // degrees clockwise, for a level horizon
+
+	// Crop, normalised to the corrected frame. A zero width or height
+	// means the whole frame, so the zero Edit still means "as shot".
+	CropX float64 `json:"cropX"`
+	CropY float64 `json:"cropY"`
+	CropW float64 `json:"cropW"`
+	CropH float64 `json:"cropH"`
 }
 
 // IsZero reports whether the edit leaves the shot alone.
@@ -46,6 +60,16 @@ func (e Edit) Clamp() Edit {
 	e.Vibrance = c(e.Vibrance, -100, 100)
 	e.Clarity = c(e.Clarity, -100, 100)
 	e.Sharpen = c(e.Sharpen, 0, 100)
+	e.Distortion = c(e.Distortion, -100, 100)
+	e.Vignette = c(e.Vignette, -100, 100)
+	e.Rotate = c(e.Rotate, -maxRotate, maxRotate)
+	// A crop is kept whole or discarded: half of one, with a width but no
+	// origin, would silently move the frame.
+	if e.CropW > 0 && e.CropH > 0 {
+		e.CropX, e.CropY, e.CropW, e.CropH = e.CropRect()
+	} else {
+		e.CropX, e.CropY, e.CropW, e.CropH = 0, 0, 0, 0
+	}
 	return e
 }
 
@@ -70,7 +94,8 @@ const (
 // and saturation match how the eye reads them, and where local contrast
 // and sharpening finish the job.
 func Render(s *Scene, e Edit) *image.RGBA {
-	return render(s, e, make([]float32, len(s.Pix)))
+	g := applyGeometry(s, e.Clamp())
+	return render(g, e, make([]float32, len(g.Pix)))
 }
 
 // RenderInPlace is Render for a Scene that will not be needed again. It
@@ -78,7 +103,21 @@ func Render(s *Scene, e Edit) *image.RGBA {
 // which on a full-resolution export is a few hundred megabytes not asked
 // for. The Scene is left holding display values and must be discarded.
 func RenderInPlace(s *Scene, e Edit) *image.RGBA {
+	// Geometry allocates its own output anyway, so once it has run the
+	// buffer to work in is the one it just made, not the caller's.
+	if g := applyGeometry(s, e.Clamp()); g != s {
+		return render(g, e, g.Pix)
+	}
 	return render(s, e, s.Pix)
+}
+
+// RenderUncropped develops the frame with the lens corrected and the
+// straightening applied, but the crop ignored. This is what the crop tool
+// draws on top of: you cannot choose where to cut if you can only see
+// what survived the last cut.
+func RenderUncropped(s *Scene, e Edit) *image.RGBA {
+	e.CropX, e.CropY, e.CropW, e.CropH = 0, 0, 0, 0
+	return Render(s, e)
 }
 
 func render(s *Scene, e Edit, buf []float32) *image.RGBA {

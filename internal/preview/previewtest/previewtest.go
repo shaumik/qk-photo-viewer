@@ -245,7 +245,14 @@ func DemoRAW(path string, w, h, idx int) error {
 	preview := b.AddBlob(pj.Bytes())
 	root := b.AddIFD()
 	sub := b.AddIFD()
+	exif := b.AddIFD()
 	sub.BlobOffset(0x0201, preview).Long(0x0202, int64(pj.Len()))
+	// A named lens at a focal length, so the demo exercises the profile
+	// that gets learned once and reused.
+	exif.ASCII(0xA434, "E PZ 16-50mm F3.5-5.6 OSS").
+		Rational(0x920A, [2]uint32{160, 10}).
+		Short(0x8827, 200).
+		ASCII(0x9003, "2026:08:02 16:41:03")
 
 	cm := make([][2]int32, 9)
 	for i, v := range sRGBFromXYZ {
@@ -267,7 +274,7 @@ func DemoRAW(path string, w, h, idx int) error {
 		Short(0x787F, int64(white)).
 		SShort(0x7313, 1024, 1024, 1024, 1024). // neutral: the scene is the truth
 		SRational(0xC621, cm...).
-		SubIFD(sub)
+		SubIFD(sub, exif)
 	return os.WriteFile(path, b.Bytes(), 0o644)
 }
 

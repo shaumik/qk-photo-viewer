@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 
 	"github.com/shaumik/qk-photo-viewer/internal/raw"
 	"github.com/shaumik/qk-photo-viewer/internal/tiff"
@@ -122,40 +123,93 @@ func (s *Scene) Downscaled(maxDim int) *Scene {
 	return &out
 }
 
-// OrientationOf reads a file's EXIF orientation, returning 1 — upright —
-// when there is none to read.
-func OrientationOf(path string) int {
+// withTIFF opens a photo's tag structure — the file itself for a RAW, the
+// EXIF block for a JPEG — and hands it to fn. A file with nothing readable
+// in it simply never calls fn; not knowing is normal here, not an error.
+func withTIFF(path string, fn func(*tiff.File)) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 1
+		return
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return 1
+		return
 	}
 	var magic [2]byte
 	if _, err := f.ReadAt(magic[:], 0); err != nil {
-		return 1
+		return
 	}
 	if magic == [2]byte{0xFF, 0xD8} {
+		// EXIF lives near the front; there is no reason to read a whole JPEG.
 		data, err := io.ReadAll(io.NewSectionReader(f, 0, min64(st.Size(), 1<<20)))
 		if err != nil {
-			return 1
+			return
 		}
-		if o, ok := OrientationOfJPEG(data); ok {
-			return o
+		seg := findAPP1(data)
+		if seg == nil {
+			return
 		}
-		return 1
+		if t, err := tiff.Parse(bytes.NewReader(seg), int64(len(seg))); err == nil {
+			fn(t)
+		}
+		return
 	}
-	t, err := tiff.Parse(f, st.Size())
-	if err != nil {
-		return 1
+	if t, err := tiff.Parse(f, st.Size()); err == nil {
+		fn(t)
 	}
-	if o, ok := t.AnyInt(tiff.TagOrientation); ok && o >= 1 && o <= 8 {
-		return int(o)
-	}
-	return 1
+}
+
+// OrientationOf reads a file's EXIF orientation, returning 1 — upright —
+// when there is none to read.
+func OrientationOf(path string) int {
+	o := 1
+	withTIFF(path, func(t *tiff.File) {
+		if v, ok := t.AnyInt(tiff.TagOrientation); ok && v >= 1 && v <= 8 {
+			o = int(v)
+		}
+	})
+	return o
+}
+
+// EXIF tags naming the lens.
+const (
+	tagLensSpecification = 0xA432
+	tagLensModel         = 0xA434
+)
+
+// LensOf reports which lens took a photo and at what focal length, so a
+// correction dialled in once can be recognised again. Older bodies do not
+// always write a lens name, so a lens is also identifiable by the range it
+// covers — "16-50mm f/3.5-5.6" names the kit zoom well enough to tell it
+// apart from anything else likely to be on the camera.
+func LensOf(path string) (name string, focalMM float64) {
+	withTIFF(path, func(t *tiff.File) {
+		name = strings.TrimSpace(t.AnyStr(tagLensModel))
+		if v := t.AnyFloats(tagFocalLength); len(v) > 0 && v[0] > 0 {
+			focalMM = v[0]
+		}
+		if name != "" {
+			return
+		}
+		spec := t.AnyFloats(tagLensSpecification)
+		if len(spec) < 4 || spec[0] <= 0 {
+			return
+		}
+		if spec[1] > spec[0] {
+			name = fmt.Sprintf("%g-%gmm", spec[0], spec[1])
+		} else {
+			name = fmt.Sprintf("%gmm", spec[0])
+		}
+		if spec[2] > 0 {
+			if spec[3] > spec[2] {
+				name += fmt.Sprintf(" f/%g-%g", spec[2], spec[3])
+			} else {
+				name += fmt.Sprintf(" f/%g", spec[2])
+			}
+		}
+	})
+	return name, focalMM
 }
 
 // OrientationOfJPEG reads the orientation a JPEG's own EXIF declares. A

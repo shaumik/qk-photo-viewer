@@ -44,8 +44,13 @@ func realARW(t *testing.T, dir, name string) string {
 	prevJPEG := b.AddBlob(previewtest.RealJPEG(fixW, fixH, 3))
 	root := b.AddIFD()
 	sub := b.AddIFD()
+	exif := b.AddIFD()
 	sub.BlobOffset(0x0201, prevJPEG).
 		Long(0x0202, int64(len(previewtest.RealJPEG(fixW, fixH, 3))))
+	// A lens the correction can be filed under, at a focal length.
+	exif.ASCII(0xA434, "E PZ 16-50mm F3.5-5.6 OSS").
+		Rational(0x920A, [2]uint32{160, 10}).
+		Short(0x8827, 200)
 	root.ASCII(tiff.TagMake, "SONY").
 		ASCII(tiff.TagModel, "ILCE-7M3").
 		Short(tiff.TagPhotometric, tiff.PhotometricCFA).
@@ -61,7 +66,7 @@ func realARW(t *testing.T, dir, name string) string {
 		Short(0x7310, 512, 512, 512, 512).
 		Short(0x787F, 16300).
 		SShort(0x7313, 2288, 1024, 1024, 1616).
-		SubIFD(sub)
+		SubIFD(sub, exif)
 
 	path := filepath.Join(dir, name+".ARW")
 	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
@@ -495,6 +500,133 @@ func TestPairKeepsOneEdit(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(dir, "*"+edits.Suffix))
 	if len(matches) != 1 {
 		t.Errorf("wrote %d sidecars for one photo: %v", len(matches), matches)
+	}
+}
+
+/* ---------- geometry and lens ---------- */
+
+func TestCropChangesTheRenderedShape(t *testing.T) {
+	s, _ := openShoot(t)
+	full := developInfo(t, s, "DSC00001")
+
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "edit": develop.Edit{
+		CropX: 0.25, CropY: 0.25, CropW: 0.5, CropH: 0.5,
+	}})
+	img, err := jpeg.Decode(bytes.NewReader(mustRender(t, s, "DSC00001")))
+	if err != nil {
+		t.Fatalf("cropped render: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() != full.Width/2 || b.Dy() != full.Height/2 {
+		t.Errorf("cropped render is %dx%d, want half of %dx%d",
+			b.Dx(), b.Dy(), full.Width, full.Height)
+	}
+
+	// The crop tool needs the frame it is cutting from, not the offcut.
+	code, body := get(t, s, "/api/develop/DSC00001?uncropped=1")
+	if code != 200 {
+		t.Fatalf("uncropped render: %d %s", code, body)
+	}
+	unc, err := jpeg.Decode(bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("uncropped render: %v", err)
+	}
+	if b := unc.Bounds(); b.Dx() != full.Width || b.Dy() != full.Height {
+		t.Errorf("uncropped render is %dx%d, want the full %dx%d",
+			b.Dx(), b.Dy(), full.Width, full.Height)
+	}
+
+	// And the reported frame stays the uncropped one, because that is what
+	// the crop rectangle's coordinates are measured against.
+	if got := developInfo(t, s, "DSC00001"); got.Width != full.Width || got.Height != full.Height {
+		t.Errorf("frame reported as %dx%d after cropping, want the uncropped %dx%d",
+			got.Width, got.Height, full.Width, full.Height)
+	}
+}
+
+func TestExportHonoursTheCrop(t *testing.T) {
+	s, _ := openShoot(t)
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "edit": develop.Edit{
+		CropX: 0, CropY: 0, CropW: 0.5, CropH: 1,
+	}})
+	res, err := s.ExportOne("DSC00001", "")
+	if err != nil {
+		t.Fatalf("ExportOne: %v", err)
+	}
+	data, _ := os.ReadFile(res.Path)
+	img, err := jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	// Full resolution, half the width — the crop applies at export size,
+	// not at the size it was chosen on.
+	if b := img.Bounds(); b.Dx() != fixW/2 || b.Dy() != fixH {
+		t.Errorf("exported %dx%d, want %dx%d", b.Dx(), b.Dy(), fixW/2, fixH)
+	}
+}
+
+func TestLensCorrectionIsLearnedOnceAndReused(t *testing.T) {
+	// The whole point of the lens store: a lens distorts the same way
+	// every time, so fixing it on one frame should fix it on the next.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	realARW(t, dir, "DSC00001")
+	realARW(t, dir, "DSC00002")
+	s := New()
+	if _, err := s.OpenFolder(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	first := developInfo(t, s, "DSC00001")
+	if first.Lens == "" {
+		t.Fatal("the fixture should name its lens")
+	}
+	if first.LensLearned {
+		t.Error("nothing has been learned yet")
+	}
+
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "edit": develop.Edit{
+		Distortion: 45, Vignette: 20,
+	}})
+
+	// A second, untouched photo on the same lens: auto-developing it
+	// should arrive with the correction already applied.
+	code, body := post(t, s, "/api/edit", map[string]any{"id": "DSC00002", "action": "auto"})
+	if code != 200 {
+		t.Fatalf("auto: %d %s", code, body)
+	}
+	var got DevelopInfo
+	json.Unmarshal(body, &got)
+	if got.Edit.Distortion != 45 || got.Edit.Vignette != 20 {
+		t.Errorf("second photo got distortion %v vignette %v, want the learned 45 and 20",
+			got.Edit.Distortion, got.Edit.Vignette)
+	}
+	if !got.LensLearned {
+		t.Error("the second photo should report that its lens is known")
+	}
+
+	// And it outlives the session, because the lens outlives the card.
+	s2 := New()
+	if _, err := s2.OpenFolder(dir); err != nil {
+		t.Fatal(err)
+	}
+	if !developInfo(t, s2, "DSC00002").LensLearned {
+		t.Error("the lens was forgotten between sessions")
+	}
+}
+
+func TestAnUnidentifiableLensIsNeverLearned(t *testing.T) {
+	// Applying one lens's correction to another's photos is worse than
+	// applying none, so a photo that does not name its lens teaches
+	// nothing and inherits nothing.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	s, _ := openShoot(t)
+	info := developInfo(t, s, "DSC00002") // the JPEG-only fixture, no lens tags
+	if info.Lens != "" {
+		t.Fatalf("fixture unexpectedly names a lens: %q", info.Lens)
+	}
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00002", "edit": develop.Edit{Distortion: 60}})
+	if s.lenses.Len() != 0 {
+		t.Errorf("learned %d profiles from a photo with no lens", s.lenses.Len())
 	}
 }
 

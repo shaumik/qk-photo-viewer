@@ -51,6 +51,33 @@ picture:
 
 Hold **Compare** to see what you started with. **`R`** puts it all back.
 
+### The lens, remembered
+
+Your camera quietly fixes its own lens when it writes a JPEG — the kit
+zoom's bulge at 16mm, the dark corners — and leaves the RAW alone,
+expecting whatever opens it to do the same. **Lens bulge** and **Corner
+light** do it.
+
+You only do it once. Dial a lens in at a focal length and QK files it
+under that lens; every later shot on the same glass at the same focal
+length starts already corrected, in this shoot and every shoot after. It
+learns yours rather than shipping guesses about lenses it has never seen.
+
+### Crop and straighten
+
+**`C`**, then drag the frame you want, on the photo, at full size. While
+you're choosing you see the *whole* frame, not just what survived the last
+cut. Rule-of-thirds grid, corner handles, and one-click ratios for where
+the photo is going — 4:5 for a feed, 3:2 for a print, 16:9, square.
+
+**Straighten** levels a horizon and zooms just enough that no empty corner
+ever swings into view.
+
+![Crop and straighten](docs/screenshots/crop.png)
+
+Lens correction, straightening and the crop are one operation under the
+hood — a single resample — so the picture is never softened twice.
+
 **Nothing is ever written to your RAW.** Edits live in a small file beside
 it — copy the folder and they come along, delete it and the photo is as
 shot. If the card's lock switch is on, they go to app support instead, and
@@ -89,7 +116,7 @@ a trackpad.
 | `Z` or click | 1:1 zoom, move mouse to pan |
 | `G` | grid overview |
 | `E` | develop this photo |
-| `A` | auto-develop · `R` reset · `\` before/after |
+| `A` | auto-develop · `C` crop · `R` reset · `\` before/after |
 | `⌘E` | export a JPEG · `⌘⇧E` export every keeper |
 | `⌘⏎` | commit rejects |
 | `⌘O` | open a different folder |

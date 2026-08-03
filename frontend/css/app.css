@@ -219,8 +219,10 @@ kbd{font:11px var(--mono);color:var(--text);background:var(--bg-raised);
    A rail beside the picture rather than an overlay on top of it: you are
    judging colour and brightness, and a sheet floating over the image would
    change how both read. */
+/* Above the viewer's own overlays: the nav arrows and the crop shading
+   both sit inside main and would otherwise paint across the rail. */
 #editPanel{flex:none;width:288px;overflow-y:auto;background:var(--bg-chrome);
-           border-left:1px solid var(--line);padding:14px;
+           border-left:1px solid var(--line);padding:14px;z-index:6;
            display:flex;flex-direction:column;gap:12px}
 #editPanel.hidden{display:none}
 #editBtn{background:color-mix(in srgb,var(--accent) 16%,var(--bg-raised));
@@ -281,7 +283,56 @@ body.editing #editBtn{background:var(--accent);color:var(--bg-well);border-color
 /* On a phone the rail becomes a sheet across the bottom: there is no room
    beside the picture, and a thumb reaches the bottom of the screen. */
 @media (max-width:760px){
-  #editPanel{position:absolute;left:0;right:0;bottom:0;width:auto;z-index:6;
+  #editPanel{position:absolute;left:0;right:0;bottom:0;width:auto;
              max-height:62%;border-left:none;border-top:1px solid var(--line)}
   .ep-fine{display:none}
 }
+
+/* ---------- crop overlay ----------
+   The rectangle sits over the picture, in #main rather than #stage,
+   because the stage's contents are replaced on every render. */
+/* The overlay itself is inert: only the rectangle takes the pointer, so
+   the panel beside it stays clickable. */
+#cropOverlay{position:absolute;z-index:5;overflow:hidden;
+             pointer-events:none;touch-action:none}
+#cropOverlay.hidden{display:none}
+.crop-box{position:absolute;cursor:move;pointer-events:auto;
+          box-shadow:0 0 0 100vmax rgba(0,0,0,.6);
+          outline:1px solid rgba(255,255,255,.9)}
+/* Rule of thirds: the lines you actually compose against. */
+.crop-box::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(to right,transparent calc(33.333% - .5px),rgba(255,255,255,.35) calc(33.333% - .5px),
+      rgba(255,255,255,.35) calc(33.333% + .5px),transparent calc(33.333% + .5px),
+      transparent calc(66.666% - .5px),rgba(255,255,255,.35) calc(66.666% - .5px),
+      rgba(255,255,255,.35) calc(66.666% + .5px),transparent calc(66.666% + .5px)),
+    linear-gradient(to bottom,transparent calc(33.333% - .5px),rgba(255,255,255,.35) calc(33.333% - .5px),
+      rgba(255,255,255,.35) calc(33.333% + .5px),transparent calc(33.333% + .5px),
+      transparent calc(66.666% - .5px),rgba(255,255,255,.35) calc(66.666% - .5px),
+      rgba(255,255,255,.35) calc(66.666% + .5px),transparent calc(66.666% + .5px))}
+.crop-box::after{content:attr(data-size);position:absolute;left:50%;bottom:6px;
+  transform:translateX(-50%);font:10px/1 var(--mono);letter-spacing:.08em;
+  color:var(--text);background:rgba(14,14,16,.75);border-radius:3px;padding:3px 6px;
+  pointer-events:none;white-space:nowrap}
+.crop-h{position:absolute;width:16px;height:16px;background:transparent;pointer-events:auto}
+.crop-h::after{content:"";position:absolute;inset:5px;background:#fff;border-radius:1px;
+               box-shadow:0 0 3px rgba(0,0,0,.7)}
+.crop-nw{left:-8px;top:-8px;cursor:nwse-resize}
+.crop-n {left:50%;top:-8px;margin-left:-8px;cursor:ns-resize}
+.crop-ne{right:-8px;top:-8px;cursor:nesw-resize}
+.crop-e {right:-8px;top:50%;margin-top:-8px;cursor:ew-resize}
+.crop-se{right:-8px;bottom:-8px;cursor:nwse-resize}
+.crop-s {left:50%;bottom:-8px;margin-left:-8px;cursor:ns-resize}
+.crop-sw{left:-8px;bottom:-8px;cursor:nesw-resize}
+.crop-w {left:-8px;top:50%;margin-top:-8px;cursor:ew-resize}
+body.cropping #stage{cursor:default}
+body.cropping .hud,body.cropping #zoomTag,body.cropping .navbtn{opacity:0;pointer-events:none}
+
+#cropBtn.on{background:var(--accent);color:var(--bg-well);border-color:var(--accent)}
+#cropTools{display:flex;flex-direction:column;gap:8px}
+.ep-aspects{display:flex;flex-wrap:wrap;gap:5px}
+.ep-aspects button{flex:1 0 auto;padding:4px 9px;font-size:11.5px}
+.ep-aspects button.on{background:var(--accent);color:var(--bg-well);border-color:var(--accent)}
+.ep-group{font:10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+          color:var(--text-dim);border-top:1px solid var(--line);
+          padding-top:11px;margin-top:3px}

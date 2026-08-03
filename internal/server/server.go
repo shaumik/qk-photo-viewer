@@ -20,6 +20,7 @@ import (
 	"github.com/shaumik/qk-photo-viewer/internal/develop"
 	"github.com/shaumik/qk-photo-viewer/internal/edits"
 	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
+	"github.com/shaumik/qk-photo-viewer/internal/lens"
 	"github.com/shaumik/qk-photo-viewer/internal/library"
 	"github.com/shaumik/qk-photo-viewer/internal/preview"
 	"github.com/shaumik/qk-photo-viewer/internal/trash"
@@ -97,6 +98,17 @@ type Service struct {
 	edits   *edits.Store // how each photo should be developed
 	scenes  *sceneCache  // decoded, demosaiced frames ready for the sliders
 	renders *preview.Cache
+
+	// Lens corrections outlive a shoot: the glass is a property of your
+	// bag, not of the card in the camera.
+	lenses    *lens.Store
+	lensCache map[string]lensID
+}
+
+// lensID is what a photo's tags say about the glass in front of it.
+type lensID struct {
+	name  string
+	focal float64
 }
 
 func New() *Service {
@@ -108,6 +120,7 @@ func New() *Service {
 		warm:     make(chan string, warmQueueSize),
 		scenes:   newSceneCache(sceneCacheSize),
 		renders:  preview.NewCache(renderCacheSize),
+		lenses:   lens.Open(),
 	}
 	for i := 0; i < warmWorkers; i++ {
 		go func() {
@@ -181,6 +194,7 @@ func (s *Service) OpenFolder(dir string) (OpenResult, error) {
 	s.dir, s.photos, s.readOnly = dir, photos, ro
 	s.rejected = map[string]bool{}
 	s.edits = store
+	s.lensCache = map[string]lensID{}
 	res := s.stateLocked()
 	s.mu.Unlock()
 	s.emit(Event{Type: "open"})

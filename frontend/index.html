@@ -46,6 +46,14 @@
       <button id="epAuto" class="ep-auto" title="Work it out for me (A)">✨ Auto</button>
       <p class="ep-note" id="epNote"></p>
       <div class="ep-sliders" id="epSliders"></div>
+      <button id="cropBtn" class="ep-wide" title="Crop and straighten (C)">Crop &amp; straighten</button>
+      <div id="cropTools" class="hidden">
+        <div class="ep-aspects" id="cropAspects"></div>
+        <div class="ep-row-btns">
+          <button id="cropReset">Whole frame</button>
+          <button id="cropDone">Done</button>
+        </div>
+      </div>
       <div class="ep-row-btns">
         <button id="epBefore" title="Hold to see the original (\)">Hold to compare</button>
         <button id="epReset" title="Back to as shot (R)" disabled>Reset</button>
@@ -74,6 +82,7 @@
           <tr><td><kbd>I</kbd></td><td>Photo info — camera, exposure, location</td></tr>
           <tr><td><kbd>E</kbd></td><td>Develop this photo — RAW editing, sliders and all</td></tr>
           <tr><td><kbd>A</kbd></td><td>Auto-develop: let QK work out the settings</td></tr>
+          <tr><td><kbd>C</kbd></td><td>Crop and straighten — drag the frame on the photo</td></tr>
           <tr><td><kbd>R</kbd></td><td>Reset the photo back to as shot</td></tr>
           <tr><td><kbd>\</kbd></td><td>Toggle the before/after comparison</td></tr>
           <tr><td><kbd>⌘</kbd><kbd>E</kbd></td><td>Export a full-size JPEG of this photo</td></tr>
@@ -138,6 +147,7 @@
 <script src="js/http-backend.js"></script>
 <script src="js/wails-backend.js"></script>
 <script src="js/app.js"></script>
+<script src="js/crop.js"></script>
 <script src="js/edit.js"></script>
 </body>
 </html>

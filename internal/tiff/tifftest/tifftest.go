@@ -88,6 +88,16 @@ func (d *IFD) Long(tag uint16, vals ...int64) *IFD {
 	return d.add(entry{tag: tag, typ: 4, count: uint32(len(vals)), data: buf})
 }
 
+// Rational writes RATIONAL values from numerator/denominator pairs.
+func (d *IFD) Rational(tag uint16, pairs ...[2]uint32) *IFD {
+	buf := make([]byte, 8*len(pairs))
+	for i, p := range pairs {
+		le.PutUint32(buf[i*8:], p[0])
+		le.PutUint32(buf[i*8+4:], p[1])
+	}
+	return d.add(entry{tag: tag, typ: 5, count: uint32(len(pairs)), data: buf})
+}
+
 // SRational writes SRATIONAL values from numerator/denominator pairs.
 func (d *IFD) SRational(tag uint16, pairs ...[2]int32) *IFD {
 	buf := make([]byte, 8*len(pairs))

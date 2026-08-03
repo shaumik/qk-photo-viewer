@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"image"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/shaumik/qk-photo-viewer/internal/develop"
 	"github.com/shaumik/qk-photo-viewer/internal/edits"
+	"github.com/shaumik/qk-photo-viewer/internal/lens"
 	"github.com/shaumik/qk-photo-viewer/internal/library"
 	"github.com/shaumik/qk-photo-viewer/internal/preview"
 	"github.com/shaumik/qk-photo-viewer/internal/raw"
@@ -243,6 +246,11 @@ type DevelopInfo struct {
 	ApproxColor bool `json:"approxColor,omitempty"`
 	Width       int  `json:"width"`
 	Height      int  `json:"height"`
+
+	// Lens names what took the shot, and LensLearned says a correction for
+	// it was already known and has been applied.
+	Lens        string `json:"lens,omitempty"`
+	LensLearned bool   `json:"lensLearned,omitempty"`
 }
 
 // infoFor describes a photo and an edit together. Every reply that carries
@@ -261,7 +269,58 @@ func (s *Service) infoFor(p library.Photo, e develop.Edit) DevelopInfo {
 	}
 	info.Camera, info.Headroom = sc.Camera, sc.Headroom
 	info.ApproxColor, info.Width, info.Height = sc.ApproxColor, sc.W, sc.H
+	if name, focal := s.lensOf(p); name != "" {
+		info.Lens = name
+		if focal > 0 {
+			info.Lens = fmt.Sprintf("%s at %gmm", name, math.Round(focal))
+		}
+		_, info.LensLearned = s.lenses.Get(lens.Key(name, focal))
+	}
+	// Width and Height describe the corrected frame before the crop —
+	// straightening and lens correction keep the frame's size, so this is
+	// the shape the crop rectangle is measured against and drawn on.
 	return info
+}
+
+// lensOf reports the lens a photo was taken with. Reading tags is cheap
+// but not free and the answer never changes, so it is remembered for the
+// session.
+func (s *Service) lensOf(p library.Photo) (string, float64) {
+	key := editFile(p)
+	s.mu.Lock()
+	if v, ok := s.lensCache[key]; ok {
+		s.mu.Unlock()
+		return v.name, v.focal
+	}
+	s.mu.Unlock()
+
+	name, focal := develop.LensOf(displayFile(p))
+	s.mu.Lock()
+	if s.lensCache == nil {
+		s.lensCache = map[string]lensID{}
+	}
+	s.lensCache[key] = lensID{name, focal}
+	s.mu.Unlock()
+	return name, focal
+}
+
+// lensProfileFor returns what has been learned about this photo's lens.
+func (s *Service) lensProfileFor(p library.Photo) (lens.Profile, bool) {
+	name, focal := s.lensOf(p)
+	return s.lenses.Get(lens.Key(name, focal))
+}
+
+// rememberLens files the geometry half of an edit under the lens that took
+// the photo, so the next shot on that lens at that focal length starts
+// already corrected. This is the whole point of the lens store: a lens
+// distorts the same way every time, so it should only be fixed once.
+func (s *Service) rememberLens(p library.Photo, e develop.Edit) {
+	name, focal := s.lensOf(p)
+	key := lens.Key(name, focal)
+	if key == "" {
+		return
+	}
+	s.lenses.Set(key, lens.Profile{Distortion: e.Distortion, Vignette: e.Vignette})
 }
 
 func (s *Service) serveDevelopInfo(w http.ResponseWriter, r *http.Request) {
@@ -299,14 +358,23 @@ func (s *Service) serveDevelop(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("original") == "1" {
 		e = develop.Edit{} // the before half of a before/after
 	}
+	// The crop tool draws its rectangle on the frame it is cutting from,
+	// which means rendering everything except the cut.
+	uncropped := r.URL.Query().Get("uncropped") == "1"
 
-	key := fmt.Sprintf("%s|%s|%d", sceneKey(p), editTag(e), maxDim)
+	key := fmt.Sprintf("%s|%s|%d|%v", sceneKey(p), editTag(e), maxDim, uncropped)
 	data, err := s.renders.Get(key, func() ([]byte, error) {
 		sc, err := s.scenes.get(sceneKey(p), func() (*develop.Scene, error) { return sceneFor(p) })
 		if err != nil {
 			return nil, err
 		}
-		img := develop.Render(sc.Downscaled(maxDim), e)
+		small := sc.Downscaled(maxDim)
+		var img *image.RGBA
+		if uncropped {
+			img = develop.RenderUncropped(small, e)
+		} else {
+			img = develop.Render(small, e)
+		}
 		return develop.EncodeJPEG(img, 90, nil)
 	})
 	if err != nil {
@@ -340,6 +408,7 @@ func (s *Service) SetEdit(id string, e develop.Edit, hold bool) (DevelopInfo, er
 		st.Hold(editFile(p), e)
 		return info, nil
 	}
+	s.rememberLens(p, e)
 	// A failed write is worth reporting but not worth refusing the edit
 	// over: the value is live in memory either way.
 	saveErr := st.Set(editFile(p), e)
@@ -357,7 +426,13 @@ func (s *Service) AutoDevelop(id string) (DevelopInfo, error) {
 	if err != nil {
 		return DevelopInfo{}, err
 	}
-	return s.SetEdit(id, develop.Auto(sc), false)
+	e := develop.Auto(sc)
+	// Auto reads the picture; the lens correction is a property of the
+	// glass, already worked out, and belongs on top.
+	if prof, ok := s.lensProfileFor(p); ok {
+		e.Distortion, e.Vignette = prof.Distortion, prof.Vignette
+	}
+	return s.SetEdit(id, e, false)
 }
 
 // ResetEdit puts a photo back to as shot.

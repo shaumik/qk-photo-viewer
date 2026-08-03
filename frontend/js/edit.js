@@ -24,6 +24,12 @@
     { key: 'vibrance', label: 'Colour', min: -100, max: 100, step: 1 },
     { key: 'clarity', label: 'Punch', min: -100, max: 100, step: 1, hint: 'local contrast' },
     { key: 'sharpen', label: 'Sharpness', min: 0, max: 100, step: 1 },
+    { key: 'rotate', label: 'Straighten', min: -45, max: 45, step: 0.1, unit: '\u00b0',
+      group: 'Lens and framing' },
+    { key: 'distortion', label: 'Lens bulge', min: -100, max: 100, step: 1,
+      hint: 'bowed edges from the lens' },
+    { key: 'vignette', label: 'Corner light', min: -100, max: 100, step: 1,
+      hint: 'dark corners from the lens' },
   ];
 
   const ZERO = Object.fromEntries(SLIDERS.map(s => [s.key, 0]));
@@ -92,7 +98,14 @@
   function build() {
     panel = $('editPanel');
     const box = $('epSliders');
-    box.replaceChildren(...SLIDERS.map(s => {
+    box.replaceChildren();
+    SLIDERS.forEach(s => {
+      if (s.group) {
+        const h = document.createElement('div');
+        h.className = 'ep-group';
+        h.textContent = s.group;
+        box.appendChild(h);
+      }
       const row = document.createElement('div');
       row.className = 'ep-row';
       row.innerHTML =
@@ -101,8 +114,7 @@
         `<b id="epv-${s.key}">0</b></label>` +
         `<input type="range" id="ep-${s.key}" min="${s.min}" max="${s.max}" step="${s.step}" value="0">`;
       box.appendChild(row);
-      return row;
-    }));
+    });
     for (const s of SLIDERS) {
       const el = $('ep-' + s.key);
       sliderEls[s.key] = el;
@@ -130,6 +142,37 @@
       before.addEventListener(t, up));
 
     if (backend.canCopy) $('epCopy').classList.remove('hidden');
+
+    $('cropBtn').onclick = () => QKCrop.toggle();
+    // The crop tool owns the rectangle while you drag it and hands it back
+    // when you let go; reframing is the only edit that does not come from
+    // a slider.
+    QKCrop.build((r, modeChanged) => {
+      if (!photos.length) return;
+      if (!modeChanged) {
+        const whole = r.w >= 0.999 && r.h >= 0.999;
+        edit.cropX = whole ? 0 : r.x;
+        edit.cropY = whole ? 0 : r.y;
+        edit.cropW = whole ? 0 : r.w;
+        edit.cropH = whole ? 0 : r.h;
+      }
+      pushEdit(photos[cur], false);
+    });
+  }
+
+  // pushEdit saves the current edit and repaints. Everything that changes
+  // the picture goes through here, so there is one place that knows the
+  // difference between a value still moving and one that has settled.
+  async function pushEdit(p, dragging) {
+    if (mock()) { repaint(); return; }
+    try {
+      info = await api.set(p.id, edit, dragging);
+    } catch (err) {
+      toast('\u26a0 ' + err.message);
+      return;
+    }
+    if (!dragging) markEdited(p, info.edited);
+    await repaint(dragging ? DRAG_W : 0);
   }
 
   function syncSliders() {
@@ -166,6 +209,10 @@
         note.textContent += ' Colour profile is a generic one for this make — ' +
           'colours are close, not exact.';
       }
+      if (info.lens) {
+        note.textContent += ` ${info.lens}` +
+          (info.lensLearned ? ', corrections remembered from last time.' : '.');
+      }
     } else {
       tag.textContent = 'JPEG';
       tag.className = 'ep-source approx';
@@ -199,6 +246,7 @@
     edit = { ...ZERO, ...info.edit };
     syncSliders();
     describe();
+    QKCrop.adopt(edit, info.width, info.height);
     return loadFrame(p.id, 0);
   }
 
@@ -206,6 +254,7 @@
     const q = new URLSearchParams();
     if (maxDim) q.set('w', maxDim);
     if (showingBefore) q.set('original', '1');
+    if (QKCrop.active()) q.set('uncropped', '1');
     // Named 'v', not 't': the LAN remote server reserves ?t= for its
     // session token and turns away anything else that uses it.
     q.set('v', (info && info.tag) || '0');
@@ -237,6 +286,7 @@
     if (my !== seq || !on || photos[cur] !== p) return;
     stage.replaceChildren(im);
     setZoom(zoomed);
+    QKCrop.relayout();
   }
 
   // cssApprox is the mock shoot's stand-in: roughly the right direction,
@@ -260,19 +310,10 @@
 
     const p = photos[cur];
     clearTimeout(holdTimer);
-    const push = async () => {
-      try {
-        info = await api.set(p.id, edit, dragging);
-      } catch (err) {
-        toast('⚠ ' + err.message);
-        return;
-      }
-      if (!dragging) markEdited(p, info.edited);
-      repaint(dragging ? DRAG_W : 0);
-    };
     // Mid-drag, coalesce: no point rendering a value your hand has
     // already left behind.
-    if (dragging) holdTimer = setTimeout(push, 45); else push();
+    if (dragging) holdTimer = setTimeout(() => pushEdit(p, true), 45);
+    else pushEdit(p, false);
   }
 
   async function auto() {
@@ -304,6 +345,7 @@
     leftAlone.add(photos[cur].id);
     edit = { ...ZERO };
     syncSliders();
+    QKCrop.adopt(edit, 0, 0);
     showingBefore = false;
     if (mock()) { repaint(); return; }
     const p = photos[cur];
@@ -384,6 +426,7 @@
     const next = want === undefined ? !on : !!want;
     if (next === on) return;
     on = next;
+    if (!on) QKCrop.toggle(false);
     panel.classList.toggle('hidden', !on);
     document.body.classList.toggle('editing', on);
     showingBefore = false;
@@ -402,11 +445,16 @@
       return false;
     }
     if (e.altKey) return false;
-    if (e.key === 'Escape' && on) { toggle(false); return true; }
+    if (e.key === 'Escape' && on) {
+      if (QKCrop.active()) { QKCrop.toggle(false); return true; }
+      toggle(false);
+      return true;
+    }
     const k = e.key.toLowerCase();
     if (k === 'e') { toggle(); return true; }
     if (!on) return false;
     if (k === 'a') { auto(); return true; }
+    if (k === 'c') { QKCrop.toggle(); return true; }
     if (k === 'r') { reset(); return true; }
     if (e.key === '\\') { setBefore(!showingBefore); return true; }
     return false;
