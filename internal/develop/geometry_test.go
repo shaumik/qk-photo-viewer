@@ -105,24 +105,54 @@ func TestRotateTurnsTheRightWay(t *testing.T) {
 	// that droops to the right" has to do.
 	s := markedScene(101, 101, 50, 20)
 	g := applyGeometry(s, Edit{Rotate: 30})
+	// Straightening zooms to fit, so the output is smaller than the source
+	// and its centre is its own, not the source's.
+	cx, cy := float64(g.W-1)/2, float64(g.H-1)/2
 	x, y, v := brightest(g)
 	if v < 0.2 {
 		t.Fatalf("the mark did not survive rotation (peak %v)", v)
 	}
-	if x <= 50 {
-		t.Errorf("mark landed at x=%d; a clockwise rotation should move it right of centre", x)
+	if float64(x) <= cx {
+		t.Errorf("mark landed at x=%d against centre %v; a clockwise rotation should "+
+			"move it right of centre", x, cx)
 	}
-	if y >= 50 {
-		t.Errorf("mark landed at y=%d; it should still be above centre", y)
+	if float64(y) >= cy {
+		t.Errorf("mark landed at y=%d against centre %v; it should still be above centre", y, cy)
 	}
 	// Turning the other way is the mirror image.
 	gl := applyGeometry(s, Edit{Rotate: -30})
+	lcx := float64(gl.W-1) / 2
 	xl, _, _ := brightest(gl)
-	if xl >= 50 {
-		t.Errorf("anticlockwise put the mark at x=%d, want left of centre", xl)
+	if float64(xl) >= lcx {
+		t.Errorf("anticlockwise put the mark at x=%d against centre %v, want left of centre", xl, lcx)
 	}
-	if math.Abs(float64((50-xl)-(x-50))) > 2 {
-		t.Errorf("the two directions are not symmetric: %d and %d", xl, x)
+	if math.Abs((lcx-float64(xl))-(float64(x)-cx)) > 2 {
+		t.Errorf("the two directions are not symmetric: %v and %v", lcx-float64(xl), float64(x)-cx)
+	}
+}
+
+func TestStraighteningCostsPixelsNotSharpness(t *testing.T) {
+	// Zooming to fit means sampling a smaller region. If the output stayed
+	// the same size it would be an upscale, and a level horizon would be
+	// paid for in softness rather than in the pixels it actually costs.
+	s := checkerScene(120, 80, 10)
+	straight := applyGeometry(s, Edit{Rotate: 8})
+	if straight.W >= s.W || straight.H >= s.H {
+		t.Errorf("straightened to %dx%d from %dx%d; it should be smaller, not upscaled",
+			straight.W, straight.H, s.W, s.H)
+	}
+	wp := newWarp(s, Edit{Rotate: 8})
+	// One output pixel should still come from about one source pixel.
+	ax, ay, _ := wp.source(0.5, 0.5)
+	bx, _, _ := wp.source(0.5+1/float64(wp.outW), 0.5)
+	if step := math.Hypot(bx-ax, 0); step < 0.9 || step > 1.15 {
+		t.Errorf("one output pixel spans %v source pixels, want about 1", step)
+	}
+	_ = ay
+	// A crop with no rotation is not zoomed at all.
+	plain := applyGeometry(s, Edit{CropX: 0, CropY: 0, CropW: 0.5, CropH: 0.5})
+	if plain.W != 60 || plain.H != 40 {
+		t.Errorf("plain crop is %dx%d, want exactly 60x40", plain.W, plain.H)
 	}
 }
 

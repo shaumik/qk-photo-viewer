@@ -125,6 +125,8 @@ function onSyncEvent(e) {
     toast(`<b>✓</b> ${removed} committed from another screen — ${photos.length} keepers`);
   } else if (e.type === 'edit') {
     window.QKEdit?.onRemoteEdit(e);
+  } else if (e.type === 'sync') {
+    window.QKEdit?.onRemoteSync(e);
   } else if (e.type === 'export') {
     window.QKEdit?.onExportProgress(e);
   } else if (e.type === 'open' && backend.refresh) {

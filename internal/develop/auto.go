@@ -101,12 +101,48 @@ func Auto(s *Scene) Edit {
 		e.Vibrance = clamp((0.34-sat)*150, 0, 40)
 	}
 	e.Clarity = 12
+
+	// --- Grain -----------------------------------------------------------
+	// A camera JPEG arrives already sharpened and already denoised; doing
+	// either again to it makes it worse. Only sensor data wants this.
 	if s.FromRAW {
-		// Demosaicing always costs a little acuity; a camera JPEG has
-		// already been sharpened and does not want a second pass.
-		e.Sharpen = 28
+		// How much grain there is depends on the ISO, and the tag says so
+		// far more reliably than the pixels do — a genuinely noisy frame and
+		// a finely detailed one look much the same to a histogram.
+		e.Sharpen = sharpenForISO(s.ISO)
+		e.Noise = noiseForISO(s.ISO)
 	}
 	return e.Clamp()
+}
+
+// Grain becomes visible around ISO 800 on an APS-C sensor and doubles with
+// every stop after that. Below the threshold neither control does anything.
+const (
+	grainFloorISO  = 800
+	sharpenAtBase  = 28
+	sharpenPerStop = 7
+	sharpenFloor   = 8
+	noisePerStop   = 22
+	noiseCeiling   = 75
+)
+
+// stopsOfGrain is how far above the threshold a frame was shot.
+func stopsOfGrain(iso int) float64 {
+	if iso <= grainFloorISO {
+		return 0
+	}
+	return math.Log2(float64(iso) / grainFloorISO)
+}
+
+// sharpenForISO backs off as grain rises: sharpening is indifferent to
+// whether the detail it is amplifying is real.
+func sharpenForISO(iso int) float64 {
+	return clamp(sharpenAtBase-stopsOfGrain(iso)*sharpenPerStop, sharpenFloor, sharpenAtBase)
+}
+
+// noiseForISO is the other half of the same decision.
+func noiseForISO(iso int) float64 {
+	return clamp(stopsOfGrain(iso)*noisePerStop, 0, noiseCeiling)
 }
 
 // sampleMaxDim bounds the thumbnail the analysis runs on. Every statistic

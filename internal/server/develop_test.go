@@ -657,3 +657,124 @@ func brightness(t *testing.T, jpegBytes []byte) float64 {
 	}
 	return sum / float64(b.Dx()*b.Dy())
 }
+
+func TestSyncCopiesTheLookButNotTheFraming(t *testing.T) {
+	// A shoot developed one frame at a time looks like a shoot developed
+	// one frame at a time. Sync is what stops that being the only option —
+	// but where you cropped belongs to one photograph, not to the light.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	for _, n := range []string{"DSC00001", "DSC00002", "DSC00003"} {
+		realARW(t, dir, n)
+	}
+	s := New()
+	if _, err := s.OpenFolder(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// The source photo gets a look and a crop.
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "edit": develop.Edit{
+		Exposure: 1.5, Vibrance: 30, Distortion: 20,
+		Rotate: 4, CropX: 0.1, CropY: 0.1, CropW: 0.5, CropH: 0.5,
+	}})
+	// A second photo is framed differently, and should stay that way.
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00002", "edit": develop.Edit{
+		Rotate: -2, CropX: 0.3, CropY: 0, CropW: 0.4, CropH: 1,
+	}})
+
+	code, body := post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "action": "sync"})
+	if code != 200 {
+		t.Fatalf("sync: %d %s", code, body)
+	}
+	var info DevelopInfo
+	json.Unmarshal(body, &info)
+	if info.Synced != 2 {
+		t.Errorf("synced %d photos, want the other 2", info.Synced)
+	}
+
+	framed := developInfo(t, s, "DSC00002").Edit
+	if framed.Exposure != 1.5 || framed.Vibrance != 30 || framed.Distortion != 20 {
+		t.Errorf("look did not carry: %+v", framed)
+	}
+	if framed.Rotate != -2 || framed.CropX != 0.3 || framed.CropW != 0.4 {
+		t.Errorf("framing was overwritten: rotate %v crop %v %v %v %v",
+			framed.Rotate, framed.CropX, framed.CropY, framed.CropW, framed.CropH)
+	}
+
+	// An untouched photo takes the look and stays uncropped.
+	fresh := developInfo(t, s, "DSC00003").Edit
+	if fresh.Exposure != 1.5 {
+		t.Errorf("third photo exposure = %v, want 1.5", fresh.Exposure)
+	}
+	if fresh.CropW != 0 || fresh.Rotate != 0 {
+		t.Errorf("third photo picked up framing it never had: %+v", fresh)
+	}
+
+	// The source keeps everything, including its own crop.
+	src := developInfo(t, s, "DSC00001").Edit
+	if src.CropW != 0.5 || src.Rotate != 4 {
+		t.Errorf("the source photo's own framing changed: %+v", src)
+	}
+}
+
+func TestSyncIsOneEventForTheWholeShoot(t *testing.T) {
+	// Eight hundred frames must not be eight hundred messages to every
+	// connected screen.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	for _, n := range []string{"DSC00001", "DSC00002", "DSC00003"} {
+		realARW(t, dir, n)
+	}
+	s := New()
+	if _, err := s.OpenFolder(dir); err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "edit": develop.Edit{Exposure: 1}})
+
+	ch, cancel := s.Subscribe()
+	defer cancel()
+	if _, err := s.SyncLook("DSC00001", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case e := <-ch:
+		if e.Type != "sync" {
+			t.Fatalf("got a %q event, want sync", e.Type)
+		}
+		if len(e.SyncedIDs) != 2 {
+			t.Errorf("event carried %v, want the two targets", e.SyncedIDs)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no sync event")
+	}
+	select {
+	case e := <-ch:
+		t.Errorf("a second event arrived: %+v", e)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestSyncRefusesAnUnknownSource(t *testing.T) {
+	s, _ := openShoot(t)
+	if code, _ := post(t, s, "/api/edit", map[string]any{"id": "nope", "action": "sync"}); code == 200 {
+		t.Error("syncing from a photo that does not exist was accepted")
+	}
+}
+
+func TestNoiseIsAppliedFromTheISOInTheFile(t *testing.T) {
+	// The fixture records ISO 200, which is below the point where grain is
+	// worth smoothing, so auto should sharpen fully and smooth nothing.
+	s, _ := openShoot(t)
+	code, body := post(t, s, "/api/edit", map[string]any{"id": "DSC00001", "action": "auto"})
+	if code != 200 {
+		t.Fatalf("auto: %d %s", code, body)
+	}
+	var info DevelopInfo
+	json.Unmarshal(body, &info)
+	if info.Edit.Noise != 0 {
+		t.Errorf("noise = %v at ISO 200, want none", info.Edit.Noise)
+	}
+	if info.Edit.Sharpen == 0 {
+		t.Error("a low-ISO RAW should still be sharpened")
+	}
+}

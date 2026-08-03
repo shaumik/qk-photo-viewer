@@ -42,6 +42,10 @@ type Scene struct {
 	Camera      string
 	// Headroom is how far above white the brightest sample sits, in stops.
 	Headroom float64
+	// ISO the frame was shot at, 0 when the file does not say. How much
+	// grain there is to deal with is a property of the capture, and the
+	// tag knows it more reliably than the pixels do.
+	ISO int
 }
 
 // PreviewMaxDim bounds a Scene built for the screen. Big enough for a
@@ -68,7 +72,7 @@ func FromRAWImage(im *raw.Image, maxDim int) *Scene {
 	toSRGB(pix, im.CamToSRGB)
 	pix, w, h = orient(pix, w, h, im.Orientation)
 
-	s := &Scene{W: w, H: h, Pix: pix, FromRAW: true,
+	s := &Scene{W: w, H: h, Pix: pix, FromRAW: true, ISO: im.ISO,
 		ApproxColor: im.Approximate, Camera: cameraName(im)}
 	s.Headroom = headroom(pix)
 	return s
@@ -121,6 +125,15 @@ func (s *Scene) Downscaled(maxDim int) *Scene {
 	out := *s
 	out.Pix, out.W, out.H = pix, w, h
 	return &out
+}
+
+// WithISO returns the Scene tagged with a sensitivity. The RAW path knows
+// it already; the preview fallback has to be told.
+func (s *Scene) WithISO(iso int) *Scene {
+	if iso > 0 {
+		s.ISO = iso
+	}
+	return s
 }
 
 // withTIFF opens a photo's tag structure — the file itself for a RAW, the
@@ -177,6 +190,17 @@ const (
 	tagLensSpecification = 0xA432
 	tagLensModel         = 0xA434
 )
+
+// ISOOf reads the sensitivity a photo was shot at, 0 when unrecorded.
+func ISOOf(path string) int {
+	iso := 0
+	withTIFF(path, func(t *tiff.File) {
+		if v, ok := t.AnyInt(tagISO); ok && v > 0 && v < 1<<22 {
+			iso = int(v)
+		}
+	})
+	return iso
+}
 
 // LensOf reports which lens took a photo and at what focal length, so a
 // correction dialled in once can be recognised again. Older bodies do not

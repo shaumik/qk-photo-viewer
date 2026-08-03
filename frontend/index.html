@@ -62,6 +62,7 @@
         <button id="epExport" title="Full-size JPEG (⌘E)">Export JPEG</button>
         <button id="epCopy" class="hidden" title="Copy the photo (⌘C)">Copy</button>
       </div>
+      <button id="epSync" class="ep-wide" title="Give every keeper this look">Apply look to all keepers</button>
       <button id="epExportAll" class="ep-wide" title="Every keeper, developed (⌘⇧E)">Export all keepers</button>
       <p class="ep-fine">Your originals are never changed. Edits are saved
          beside them and can be undone at any time.</p>
@@ -117,6 +118,18 @@
            reader disconnected. Nothing was lost: reinsert the card and rescan.
            Your reject marks are kept.</p>
         <div class="row"><button id="rescanBtn">Rescan</button></div>
+      </div>
+    </div>
+
+    <div id="syncSheet" class="overlay hidden">
+      <div class="sheet">
+        <h2>Apply this look to <span id="syncCount">0</span> <span id="syncPlural">photos</span></h2>
+        <p>Every other keeper gets this photo's brightness, colour, contrast
+           and lens correction — the decisions you'd otherwise repeat by hand
+           on each one. It replaces whatever they're set to now.</p>
+        <p>Their <b>framing stays as it is</b>. Where you cropped and how far
+           you straightened belong to one photograph, not to the shoot.</p>
+        <div class="row"><button id="syncCancel">Cancel</button><button id="syncConfirm">Apply look</button></div>
       </div>
     </div>
 

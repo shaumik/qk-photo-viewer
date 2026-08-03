@@ -61,6 +61,10 @@ type Image struct {
 	Make, Model string
 	Orientation int  // EXIF orientation, 1 when absent
 	Approximate bool // colour matrix is a generic fallback, not this body's
+
+	// ISO says how much grain to expect better than the pixels do, which
+	// is what decides how hard to denoise and how much to sharpen.
+	ISO int
 }
 
 // At returns the CFA colour of pixel (x, y).
@@ -83,6 +87,7 @@ const (
 	tagSonyWBRGGB    = 0x7313
 	tagSonyWBGRBG    = 0x7303
 	tagSonyWhite     = 0x787F
+	tagISOSpeed      = 0x8827
 )
 
 // Decode reads a RAW file's sensor data. It is the expensive path — tens
@@ -126,6 +131,7 @@ func decodeTIFF(t *tiff.File, path string) (*Image, error) {
 		Make:        t.AnyStr(tiff.TagMake),
 		Model:       t.AnyStr(tiff.TagModel),
 		Orientation: int(orDefault(t, tiff.TagOrientation, 1)),
+		ISO:         int(orDefault(t, tagISOSpeed, 0)),
 	}
 
 	bps := int(d.IntOr(tiff.TagBitsPerSample, 0))

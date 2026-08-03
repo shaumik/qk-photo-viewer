@@ -36,8 +36,8 @@ recovery, contrast. You don't press anything. It's just done.
 
 ![Develop mode](docs/screenshots/develop.png)
 
-Then argue with it if you like. Ten sliders, named for what they do to the
-picture:
+Then argue with it if you like. Every slider is named for what it does to
+the picture rather than what it does to the numbers:
 
 - **Highlights** pulls a blown sky back out of the white. This is the one
   that needs RAW: your camera's JPEG threw that detail away, the sensor
@@ -47,9 +47,18 @@ picture:
 - **Warmth** and **Tint** fix a colour cast, with the whole latitude of
   the sensor behind them instead of an 8-bit JPEG that tears when pushed.
 - **Punch** is local contrast, **Sharpness** puts back what demosaicing
-  costs.
+  costs, and **Clean up** smooths high-ISO grain.
 
 Hold **Compare** to see what you started with. **`R`** puts it all back.
+
+QK reads the ISO off the file and decides those last two for you. Grain and
+fine detail look the same to a histogram, but the camera wrote down which
+one it was — so a base-ISO frame gets sharpened properly, and an ISO 6400
+frame gets smoothed instead of having its noise sharpened at it. Colour
+blotches are smoothed hard, because the eye barely resolves colour and
+there is no detail to lose there; grain is treated gently, with a filter
+that averages neighbours only where they're close enough to be noise
+rather than an edge.
 
 ### The lens, remembered
 
@@ -82,6 +91,16 @@ hood — a single resample — so the picture is never softened twice.
 it — copy the folder and they come along, delete it and the photo is as
 shot. If the card's lock switch is on, they go to app support instead, and
 you can still edit.
+
+### One look, whole shoot
+
+Get one frame right, then **Apply look to all keepers**. Every other keeper
+takes its brightness, colour, contrast and lens correction — the decisions
+you'd otherwise repeat by hand forty times, which is the real reason a set
+ends up looking like it was edited one photo at a time.
+
+Their **framing stays as it is**. Where you cropped and how far you
+straightened belong to one photograph, not to the light.
 
 **⌘E** writes a full-size JPEG, developed at full resolution with a proper
 demosaic and your camera, lens and location metadata carried across.

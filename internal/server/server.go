@@ -54,7 +54,7 @@ type CommitResult struct {
 // Event is a state change broadcast to every connected screen — the desktop
 // webview and any phone remote sessions.
 type Event struct {
-	Type     string   `json:"type"` // "reject" | "commit" | "open" | "edit" | "export"
+	Type     string   `json:"type"` // "reject" | "commit" | "open" | "edit" | "sync" | "export"
 	ID       string   `json:"id,omitempty"`
 	Rejected bool     `json:"rejected,omitempty"`
 	MovedIDs []string `json:"movedIds,omitempty"`
@@ -64,6 +64,10 @@ type Event struct {
 	// screen knows the developed frame it is showing is stale.
 	Edit *develop.Edit `json:"edit,omitempty"`
 	Tag  string        `json:"tag,omitempty"`
+
+	// A look copied across a shoot arrives as one event rather than one
+	// per photo: eight hundred frames would be eight hundred messages.
+	SyncedIDs []string `json:"syncedIds,omitempty"`
 
 	// Export progress.
 	Name     string `json:"name,omitempty"`

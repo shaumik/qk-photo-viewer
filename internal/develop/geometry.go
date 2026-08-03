@@ -85,9 +85,13 @@ func newWarp(s *Scene, e Edit) *warp {
 		halfW: float64(s.W) / 2, halfH: float64(s.H) / 2,
 	}
 	wp.rNorm = math.Hypot(wp.halfW, wp.halfH)
-	wp.outW = maxInt(1, int(math.Round(float64(s.W)*w)))
-	wp.outH = maxInt(1, int(math.Round(float64(s.H)*h)))
 	wp.fit = fitScale(wp)
+	// The fit zoom samples a smaller region; sizing the output by it too
+	// means each output pixel still comes from about one source pixel.
+	// Otherwise straightening would quietly upscale, and pay for a level
+	// horizon in sharpness rather than in the pixels it actually costs.
+	wp.outW = maxInt(1, int(math.Round(float64(s.W)*w*wp.fit)))
+	wp.outH = maxInt(1, int(math.Round(float64(s.H)*h*wp.fit)))
 	return wp
 }
 

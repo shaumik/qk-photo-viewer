@@ -22,6 +22,7 @@ type Edit struct {
 	Vibrance   float64 `json:"vibrance"` // saturation, weighted to dull colours
 	Clarity    float64 `json:"clarity"`  // local contrast, the "pop" control
 	Sharpen    float64 `json:"sharpen"`
+	Noise      float64 `json:"noise"` // smooth high-ISO grain and colour blotches
 
 	// Where the picture's edges are, and what the lens did to what is
 	// inside them. Distortion and Vignette undo the lens; the camera does
@@ -60,6 +61,7 @@ func (e Edit) Clamp() Edit {
 	e.Vibrance = c(e.Vibrance, -100, 100)
 	e.Clarity = c(e.Clarity, -100, 100)
 	e.Sharpen = c(e.Sharpen, 0, 100)
+	e.Noise = c(e.Noise, 0, 100)
 	e.Distortion = c(e.Distortion, -100, 100)
 	e.Vignette = c(e.Vignette, -100, 100)
 	e.Rotate = c(e.Rotate, -maxRotate, maxRotate)
@@ -71,6 +73,22 @@ func (e Edit) Clamp() Edit {
 		e.CropX, e.CropY, e.CropW, e.CropH = 0, 0, 0, 0
 	}
 	return e
+}
+
+// WithLookOf returns this edit wearing another's look, keeping its own
+// framing.
+//
+// The split matters. Tone, colour and lens correction are decisions about
+// a shoot: the light was the same, the glass was the same, and a set that
+// was developed one frame at a time looks like a set developed one frame
+// at a time. Framing is the opposite — where you cut and how far you had
+// to turn the camera are decisions about one photograph, and copying them
+// across a shoot would crop every other frame wrongly.
+func (e Edit) WithLookOf(look Edit) Edit {
+	look.Rotate = e.Rotate
+	look.CropX, look.CropY = e.CropX, e.CropY
+	look.CropW, look.CropH = e.CropW, e.CropH
+	return look
 }
 
 // How far each slider reaches at full travel.
@@ -307,6 +325,11 @@ func quantize(v float32) uint8 {
 func spatial(buf []float32, w, h int, e Edit) {
 	if w < 8 || h < 8 {
 		return
+	}
+	// Denoise first. Clarity and sharpening both amplify whatever is
+	// already there, and grain is exactly what they would amplify.
+	if e.Noise > 0 {
+		denoise(buf, w, h, e.Noise/100)
 	}
 	if e.Clarity != 0 {
 		radius := min(w, h) / 100

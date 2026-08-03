@@ -24,6 +24,8 @@
     { key: 'vibrance', label: 'Colour', min: -100, max: 100, step: 1 },
     { key: 'clarity', label: 'Punch', min: -100, max: 100, step: 1, hint: 'local contrast' },
     { key: 'sharpen', label: 'Sharpness', min: 0, max: 100, step: 1 },
+    { key: 'noise', label: 'Clean up', min: 0, max: 100, step: 1,
+      hint: 'smooth high-ISO grain' },
     { key: 'rotate', label: 'Straighten', min: -45, max: 45, step: 0.1, unit: '\u00b0',
       group: 'Lens and framing' },
     { key: 'distortion', label: 'Lens bulge', min: -100, max: 100, step: 1,
@@ -39,7 +41,9 @@
   // slider's own resolution and no more.
   function fmt(s, v) {
     const n = s.step < 1 ? v.toFixed(2) : String(Math.round(v));
-    return (v > 0 ? '+' : '') + n + (s.unit || '');
+    // A sign only means something on a slider that goes both ways.
+    const sign = v > 0 && s.min < 0 ? '+' : '';
+    return sign + n + (s.unit || '');
   }
 
   let on = false;          // develop mode active
@@ -131,6 +135,9 @@
     $('epExport').onclick = () => exportOne();
     $('epExportAll').onclick = () => exportAll();
     $('epCopy').onclick = copy;
+    $('epSync').onclick = askSync;
+    $('syncCancel').onclick = () => $('syncSheet').classList.add('hidden');
+    $('syncConfirm').onclick = doSync;
 
     // Before/after is a press-and-hold, so a comparison costs one gesture.
     const before = $('epBefore');
@@ -391,6 +398,41 @@
     }
   }
 
+  /* ---------- one look, whole shoot ---------- */
+
+  function syncTargets() {
+    return photos.filter(p => !p.rej && p.id !== photos[cur].id);
+  }
+
+  function askSync() {
+    if (!photos.length) return;
+    const n = syncTargets().length;
+    if (!n) { toast('Nothing else to apply it to'); return; }
+    $('syncCount').textContent = n;
+    $('syncPlural').textContent = n === 1 ? 'photo' : 'photos';
+    $('syncSheet').classList.remove('hidden');
+  }
+
+  async function doSync() {
+    $('syncSheet').classList.add('hidden');
+    const ids = syncTargets().map(p => p.id);
+    if (!ids.length) return;
+    toast(`Applying this look to ${ids.length}\u2026`);
+    try {
+      const r = await fetch('/api/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: photos[cur].id, action: 'sync', ids }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || 'sync failed');
+      const res = await r.json();
+      toast(`<b>\u2713</b> Applied to ${res.synced} photo${res.synced === 1 ? '' : 's'}` +
+        ' \u2014 their framing is untouched');
+    } catch (err) {
+      toast('\u26a0 ' + err.message);
+    }
+  }
+
   async function copy() {
     if (!photos.length || !backend.copyPhoto) return;
     toast('Developing at full size…');
@@ -446,6 +488,10 @@
     }
     if (e.altKey) return false;
     if (e.key === 'Escape' && on) {
+      if (!$('syncSheet').classList.contains('hidden')) {
+        $('syncSheet').classList.add('hidden');
+        return true;
+      }
       if (QKCrop.active()) { QKCrop.toggle(false); return true; }
       toggle(false);
       return true;
@@ -485,6 +531,19 @@
       syncSliders();
       repaint(0);
     },
+    // A look copied across the shoot arrives as one event, not one per
+    // photo. Mark them all; adopt it if we are standing on one of them.
+    onRemoteSync(ev) {
+      const ids = new Set(ev.syncedIds || []);
+      let here = false;
+      photos.forEach(p => {
+        if (!ids.has(p.id)) return;
+        markEdited(p, true);
+        if (p === photos[cur]) here = true;
+      });
+      if (here && on) show(cur);
+    },
+
     onExportProgress(ev) {
       if (ev.finished) {
         const failed = ev.failed

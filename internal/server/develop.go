@@ -162,7 +162,11 @@ func sceneFromPreview(file string, maxDim int) (*develop.Scene, error) {
 	if !ok {
 		o = develop.OrientationOf(file)
 	}
-	return develop.FromJPEGBytes(data, o, maxDim)
+	sc, err := develop.FromJPEGBytes(data, o, maxDim)
+	if err != nil {
+		return nil, err
+	}
+	return sc.WithISO(develop.ISOOf(file)), nil
 }
 
 // fullScene is the export path: every pixel the sensor recorded, through
@@ -251,6 +255,9 @@ type DevelopInfo struct {
 	// it was already known and has been applied.
 	Lens        string `json:"lens,omitempty"`
 	LensLearned bool   `json:"lensLearned,omitempty"`
+
+	// Synced counts the photos a sync just reached.
+	Synced int `json:"synced,omitempty"`
 }
 
 // infoFor describes a photo and an edit together. Every reply that carries
@@ -459,8 +466,9 @@ func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID     string        `json:"id"`
 		Edit   *develop.Edit `json:"edit"`
-		Action string        `json:"action"` // "", "auto" or "reset"
+		Action string        `json:"action"` // "", "auto", "reset" or "sync"
 		Hold   bool          `json:"hold"`   // the slider is still moving
+		IDs    []string      `json:"ids"`    // sync targets; empty means every other photo
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -475,6 +483,14 @@ func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request) {
 		info, err = s.AutoDevelop(req.ID)
 	case "reset":
 		info, err = s.ResetEdit(req.ID)
+	case "sync":
+		var applied []string
+		applied, err = s.SyncLook(req.ID, req.IDs)
+		if err == nil {
+			p, _ := s.photoByID(req.ID)
+			info = s.infoFor(p, s.editFor(p))
+			info.Synced = len(applied)
+		}
 	default:
 		if req.Edit == nil {
 			http.Error(w, "no edit supplied", http.StatusBadRequest)
@@ -487,6 +503,55 @@ func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, info)
+}
+
+// SyncLook copies one photo's look onto others: tone, colour and lens
+// correction, but not framing. A shoot developed one frame at a time looks
+// like a shoot developed one frame at a time, and this is the step that
+// stops that being the only option.
+//
+// Each target keeps its own crop and straightening, because those are
+// decisions about one photograph rather than about the light.
+func (s *Service) SyncLook(fromID string, toIDs []string) ([]string, error) {
+	from, ok := s.photoByID(fromID)
+	if !ok {
+		return nil, fmt.Errorf("unknown photo %q", fromID)
+	}
+	st := s.editStore()
+	if st == nil {
+		return nil, errors.New("no folder open")
+	}
+	look := s.editFor(from)
+
+	want := map[string]bool{}
+	for _, id := range toIDs {
+		want[id] = true
+	}
+	s.mu.Lock()
+	targets := make([]library.Photo, 0, len(want))
+	for _, p := range s.photos {
+		if p.ID != fromID && (len(toIDs) == 0 || want[p.ID]) {
+			targets = append(targets, p)
+		}
+	}
+	s.mu.Unlock()
+
+	applied := make([]string, 0, len(targets))
+	var firstErr error
+	for _, p := range targets {
+		e := s.editFor(p).WithLookOf(look)
+		if err := st.Set(editFile(p), e); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		s.rememberLens(p, e)
+		applied = append(applied, p.ID)
+	}
+	if len(applied) > 0 {
+		// One event for the batch: a shoot of eight hundred would otherwise
+		// be eight hundred messages to every connected screen.
+		s.emit(Event{Type: "sync", ID: fromID, SyncedIDs: applied, Tag: editTag(look)})
+	}
+	return applied, firstErr
 }
 
 /* ---------- export ---------- */
