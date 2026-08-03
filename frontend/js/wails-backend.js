@@ -11,6 +11,7 @@
 
   window.QKWailsBackend = {
     isMock: false,
+    canPick: true, // native folder dialog available — Open… button shows
     label: '',
     readOnly: false,
     serverMarks: [],
@@ -26,9 +27,14 @@
       return this.metas;
     },
 
+    // Returns null when the user cancels the picker — distinct from an
+    // empty folder, so a cancel never wipes an already-open session.
     async open() {
       const dir = await bridge.PickFolder();
-      if (!dir) { this.label = 'no folder chosen'; return []; }
+      if (!dir) {
+        if (!this.label) this.label = 'no folder chosen';
+        return null;
+      }
       return this._apply(await bridge.OpenFolder(dir));
     },
 
