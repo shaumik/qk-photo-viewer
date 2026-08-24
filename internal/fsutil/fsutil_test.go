@@ -46,3 +46,33 @@ func TestMoveIntoMissingSource(t *testing.T) {
 		t.Error("moving a missing file should error")
 	}
 }
+
+func TestConfigDirOverrideWinsOnEveryPlatform(t *testing.T) {
+	// The override has to be consulted before os.UserConfigDir, not after
+	// it, because os.UserConfigDir reads a different variable on each OS.
+	// Tests isolate themselves with this one; if it ever stopped taking
+	// precedence they would go on passing while quietly reading and writing
+	// the real store belonging to whoever ran them.
+	want := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "wrong"))
+	t.Setenv(ConfigDirEnv, want)
+
+	got, ok := ConfigDir()
+	if !ok {
+		t.Fatal("no config dir with an override set")
+	}
+	if got != filepath.Join(want, "QK") {
+		t.Errorf("config dir = %q, want %q", got, filepath.Join(want, "QK"))
+	}
+}
+
+func TestConfigDirFallsBackToTheSystemLocation(t *testing.T) {
+	t.Setenv(ConfigDirEnv, "")
+	got, ok := ConfigDir()
+	if !ok {
+		t.Skip("no user config dir on this machine")
+	}
+	if filepath.Base(got) != "QK" {
+		t.Errorf("config dir %q does not end in QK", got)
+	}
+}

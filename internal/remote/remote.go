@@ -60,6 +60,9 @@ func (s *Server) Stop() error { return s.srv.Close() }
 // requireToken gates every request. The QR URL carries ?t=<token> once;
 // a matching request gets a cookie and a clean redirect, after which the
 // cookie authorizes everything. Anything else is turned away.
+//
+// ?t= is therefore reserved: any other use of it on a URL the app fetches
+// reads as a wrong token and is refused. Cache-busting uses ?v=.
 func requireToken(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if t := r.URL.Query().Get("t"); t != "" {

@@ -25,12 +25,14 @@ window.QKHttpBackend = {
       label: '',
       readOnly: false,
       serverMarks: [],
+      serverEdits: [],
       metas: [],
 
       _apply(st) {
         this.label = st.dir;
         this.readOnly = !!st.readOnly;
         this.serverMarks = st.rejected || [];
+        this.serverEdits = st.edited || [];
         this.metas = (st.photos || []).map(p => ({
           id: p.id, name: p.name, pair: p.pair, burstStart: false,
         }));

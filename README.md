@@ -27,6 +27,113 @@ QK uses it instead of chewing through the RAW.
 
 ![Grid overview](docs/screenshots/grid.png)
 
+## Then make the keepers look right
+
+Press **`E`** on a photo you kept. QK reads the actual sensor data out of
+the ARW — not the JPEG your camera guessed at — looks at the histogram,
+and develops it: exposure, white balance, a real black point, highlight
+recovery, contrast. You don't press anything. It's just done.
+
+![Develop mode](docs/screenshots/develop.png)
+
+Then argue with it if you like. Every slider is named for what it does to
+the picture rather than what it does to the numbers:
+
+- **Highlights** pulls a blown sky back out of the white. This is the one
+  that needs RAW: your camera's JPEG threw that detail away, the sensor
+  didn't.
+- **Depth** sets where black actually starts, which is most of what makes
+  a flat photo stop looking flat.
+- **Warmth** and **Tint** fix a colour cast, with the whole latitude of
+  the sensor behind them instead of an 8-bit JPEG that tears when pushed.
+- **Punch** is local contrast, **Sharpness** puts back what demosaicing
+  costs, and **Clean up** smooths high-ISO grain.
+
+Hold **Compare** to see what you started with. **`R`** puts it all back.
+
+It also knows when dark is the point. Shoot something lit against a black
+backdrop and most auto-exposure will drag the whole frame up until the
+black goes grey and the noise in it shows — because half the picture is
+dark, so it "must" be underexposed. QK checks whether that dark mass is a
+shadow or a backdrop, and if it's a backdrop it exposes for the subject and
+leaves the black alone.
+
+QK reads the ISO off the file and decides those last two for you. Grain and
+fine detail look the same to a histogram, but the camera wrote down which
+one it was — so a base-ISO frame gets sharpened properly, and an ISO 6400
+frame gets smoothed instead of having its noise sharpened at it. Colour
+blotches are smoothed hard, because the eye barely resolves colour and
+there is no detail to lose there; grain is treated gently, with a filter
+that averages neighbours only where they're close enough to be noise
+rather than an edge.
+
+### The lens, remembered
+
+Your camera quietly fixes its own lens when it writes a JPEG — the kit
+zoom's bulge at 16mm, the dark corners — and leaves the RAW alone,
+expecting whatever opens it to do the same. **Lens bulge** and **Corner
+light** do it.
+
+You only do it once. Dial a lens in at a focal length and QK files it
+under that lens; every later shot on the same glass at the same focal
+length starts already corrected, in this shoot and every shoot after. It
+learns yours rather than shipping guesses about lenses it has never seen.
+
+### Crop and straighten
+
+**`C`**, then drag the frame you want, on the photo, at full size. While
+you're choosing you see the *whole* frame, not just what survived the last
+cut. Rule-of-thirds grid, corner handles, and one-click ratios for where
+the photo is going — 4:5 for a feed, 3:2 for a print, 16:9, square.
+
+**Straighten** levels a horizon and zooms just enough that no empty corner
+ever swings into view.
+
+![Crop and straighten](docs/screenshots/crop.png)
+
+Lens correction, straightening and the crop are one operation under the
+hood — a single resample — so the picture is never softened twice.
+
+**Nothing is ever written to your RAW.** Edits live in a small file beside
+it — copy the folder and they come along, delete it and the photo is as
+shot. If the card's lock switch is on, they go to app support instead, and
+you can still edit.
+
+### One look, whole shoot
+
+Get one frame right, then **Apply look to all keepers**. Every other keeper
+takes its brightness, colour, contrast and lens correction — the decisions
+you'd otherwise repeat by hand forty times, which is the real reason a set
+ends up looking like it was edited one photo at a time.
+
+Their **framing stays as it is**. Where you cropped and how far you
+straightened belong to one photograph, not to the light.
+
+**⌘E** writes a full-size JPEG, developed at full resolution with a proper
+demosaic and your camera, lens and location metadata carried across.
+**⌘⇧E** does that for every keeper in the shoot. **⌘C** puts the photo on
+the clipboard to paste straight into a message.
+
+### Where the colour comes from
+
+A sensor sees about twice as much green as red or blue, so raw data with no
+white balance on it isn't slightly off — it's unusable. Most cameras write
+the balance they chose into a tag. Some, the a6000 among them, bury it in
+an obfuscated block QK doesn't read.
+
+So QK measures it instead. Every RAW carries a JPEG the camera rendered
+itself, with the right balance already in it — the answer, written down in
+the file, in a form anyone can read. QK finds the multipliers that make its
+rendering of the sensor data agree with the camera's rendering of the same
+scene, and keeps them only if they match better than the default would
+have. Trying can't make a frame worse than not trying.
+
+The panel tells you which happened.
+
+<sub>Sony ARW today: uncompressed and compressed. A file QK can't decode
+falls back to editing the camera's preview instead of refusing — the panel
+says which one you're working on, because the difference is real.</sub>
+
 ## Cull from your phone
 
 <img src="docs/screenshots/phone.png" width="320" align="right" alt="Phone remote session">
@@ -50,6 +157,9 @@ a trackpad.
 | `X` | mark / unmark reject |
 | `Z` or click | 1:1 zoom, move mouse to pan |
 | `G` | grid overview |
+| `E` | develop this photo |
+| `A` | auto-develop · `C` crop · `R` reset · `\` before/after |
+| `⌘E` | export a JPEG · `⌘⇧E` export every keeper |
 | `⌘⏎` | commit rejects |
 | `⌘O` | open a different folder |
 | `?` | all shortcuts |

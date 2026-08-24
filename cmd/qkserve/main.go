@@ -53,11 +53,11 @@ func makeDemoShoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Real sensor mosaics, not just containers with JPEGs in them, so the
+	// demo exercises the decode-demosaic-develop path the app really uses.
 	for i := 0; i < 12; i++ {
 		name := fmt.Sprintf("DSC%05d.ARW", 4810+i)
-		err := previewtest.WriteARW(filepath.Join(dir, name),
-			previewtest.RealJPEG(96, 64, i), previewtest.RealJPEG(1200, 800, i))
-		if err != nil {
+		if err := previewtest.DemoRAW(filepath.Join(dir, name), 1200, 800, i); err != nil {
 			return "", err
 		}
 	}

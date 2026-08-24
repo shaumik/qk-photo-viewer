@@ -68,7 +68,9 @@ func Scan(root string) ([]Photo, error) {
 	walk = func(dir, prefix string, entries []os.DirEntry, depth int) {
 		for _, e := range entries {
 			name := e.Name()
-			if strings.HasPrefix(name, ".") || name == RejectsDirName {
+			// Skip our own output folders: a developed JPEG is not another
+			// photo to cull, and a reject is already dealt with.
+			if strings.HasPrefix(name, ".") || name == RejectsDirName || name == ExportDirName {
 				continue
 			}
 			if e.IsDir() {
@@ -110,6 +112,11 @@ func Scan(root string) ([]Photo, error) {
 // Same volume, so each move is a rename: instant, and recoverable until the
 // folder is emptied. Native macOS Trash integration lands in milestone 3.
 const RejectsDirName = "QK_REJECTS"
+
+// ExportDirName holds developed JPEGs, created inside the shoot folder so
+// they travel with the photos they came from. Scanning skips it for the
+// same reason it skips the rejects: an export is not another shot to cull.
+const ExportDirName = "QK_EDITED"
 
 // CommitRejects moves every file of every listed photo into RejectsDirName.
 // It returns the number of files moved. A name collision in the rejects

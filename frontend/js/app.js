@@ -61,7 +61,9 @@ async function show(i) {
       await new Promise(r => setTimeout(r, 90));
       if (my !== showSeq) { clearTimeout(slow); return; }
     }
-    el = await fullFor(cur);
+    // In develop mode the stage shows the developed frame instead of the
+    // camera's preview: slower to produce, and the whole point.
+    el = window.QKEdit && QKEdit.active() ? await QKEdit.frame(cur) : await fullFor(cur);
   } catch (e) {
     clearTimeout(slow); stage.classList.remove('loading');
     if (my === showSeq) handleLoadError(p, e);
@@ -71,6 +73,7 @@ async function show(i) {
   if (my !== showSeq) return;               // a newer frame won the race
   stage.replaceChildren(el);
   setZoom(zoomed);                          // zoom persists across frames: flip a burst at 1:1 to compare focus
+  window.QKCrop?.relayout();
   prefetch(cur);
   updateInfoPanel();
 }
@@ -120,9 +123,15 @@ function onSyncEvent(e) {
     show(Math.min(cur, photos.length - 1));
     refreshRejUI();
     toast(`<b>✓</b> ${removed} committed from another screen — ${photos.length} keepers`);
+  } else if (e.type === 'edit') {
+    window.QKEdit?.onRemoteEdit(e);
+  } else if (e.type === 'sync') {
+    window.QKEdit?.onRemoteSync(e);
+  } else if (e.type === 'export') {
+    window.QKEdit?.onExportProgress(e);
   } else if (e.type === 'open' && backend.refresh) {
     backend.refresh().then(metas => {
-      buildPhotos(metas, new Set(backend.serverMarks || []));
+      buildPhotos(metas, new Set(backend.serverMarks || []), new Set(backend.serverEdits || []));
       show(0); refreshRejUI();
     });
   }
@@ -152,6 +161,7 @@ let downX = 0, downY = 0;
 stage.addEventListener('mousedown', e => { downX = e.clientX; downY = e.clientY; });
 stage.addEventListener('click', e => {
   if (coarse) return;
+  if (document.body.classList.contains('cropping')) return; // dragging a frame, not zooming
   if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
   setZoom(!zoomed);
 });
@@ -160,6 +170,7 @@ stage.addEventListener('click', e => {
                double-tap zoom, drag pans when zoomed ---------- */
 let tsX = 0, tsY = 0, tMoved = false, lastTap = 0;
 stage.addEventListener('touchstart', e => {
+  if (document.body.classList.contains('cropping')) return;
   const t = e.touches[0]; tsX = t.clientX; tsY = t.clientY; tMoved = false;
 }, { passive: true });
 stage.addEventListener('touchmove', e => {
@@ -168,6 +179,7 @@ stage.addEventListener('touchmove', e => {
   if (zoomed) { lastMX = t.clientX; lastMY = t.clientY; pan(t.clientX, t.clientY); }
 }, { passive: false });
 stage.addEventListener('touchend', e => {
+  if (document.body.classList.contains('cropping')) return;
   const t = e.changedTouches[0], dx = t.clientX - tsX, dy = t.clientY - tsY;
   if (!zoomed && Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.3) { show(cur + (dx < 0 ? 1 : -1)); return; }
   if (!zoomed && Math.abs(dy) > 56 && Math.abs(dy) > Math.abs(dx) * 1.3) {
@@ -281,11 +293,18 @@ $('confirmCommit').onclick = doCommit;
 $('cancelCommit').onclick = () => modalEl.classList.add('hidden');
 $('helpBtn').onclick = () => helpEl.classList.remove('hidden');
 $('helpClose').onclick = () => helpEl.classList.add('hidden');
+$('editBtn').onclick = () => window.QKEdit?.toggle();
 $('mRejBtn').onclick = toggleReject;
 $('mCommitBtn').onclick = openCommit;
 
 let keyCount = 0;
 document.addEventListener('keydown', e => {
+  // Develop mode gets first refusal: it owns E, A, R, \ and the export
+  // shortcuts, and swallows Escape while its panel is open.
+  if (modalEl.classList.contains('hidden') && window.QKEdit && QKEdit.key(e)) {
+    e.preventDefault();
+    return;
+  }
   if (e.key === 'Escape') {
     gridEl.classList.add('hidden'); helpEl.classList.add('hidden');
     modalEl.classList.add('hidden'); $('remoteSheet').classList.add('hidden');
@@ -314,7 +333,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* ---------- building the session ---------- */
-function buildPhotos(metas, marked) {
+function buildPhotos(metas, marked, edited) {
   strip.replaceChildren(); gwrap.replaceChildren(); lru.clear();
   photos = metas.map((m, i) => {
     const t = document.createElement('div'); t.className = 'thumb';
@@ -327,6 +346,7 @@ function buildPhotos(metas, marked) {
     g.onclick = () => { show(photos.indexOf(p)); toggleGrid(false); };
     const p = { ...m, rej: !!(marked && marked.has(m.id)), el: t, gel: g };
     if (p.rej) { t.classList.add('rej'); g.classList.add('rej'); }
+    if (edited && edited.has(m.id)) { p.edited = true; t.classList.add('edited'); g.classList.add('edited'); }
     gwrap.appendChild(g);
     return p;
   });
@@ -356,7 +376,7 @@ async function pickAndOpen() {
     return;
   }
   if (metas === null) return; // picker cancelled
-  buildPhotos(metas, new Set(backend.serverMarks || []));
+  buildPhotos(metas, new Set(backend.serverMarks || []), new Set(backend.serverEdits || []));
   if (photos.length) { await show(0); }
   refreshRejUI();
 }
@@ -372,7 +392,7 @@ $('rescanBtn').onclick = async () => {
     return;
   }
   $('gone').classList.add('hidden');
-  buildPhotos(metas, marked);
+  buildPhotos(metas, marked, new Set(backend.serverEdits || []));
   marked.forEach(id => backend.setReject?.(id, true)); // re-seed other screens
   await show(Math.min(cur, photos.length - 1));
   refreshRejUI();
@@ -415,7 +435,8 @@ $('remoteStop').onclick = async () => {
     '<b>swipe ⟷</b> flip&nbsp;&nbsp;<b>swipe ↑</b> reject&nbsp;&nbsp;<b>double-tap</b> zoom';
 
   const metas = (await backend.open()) || [];
-  buildPhotos(metas, new Set(backend.serverMarks || []));
+  buildPhotos(metas, new Set(backend.serverMarks || []), new Set(backend.serverEdits || []));
+  window.QKEdit?.boot();
   backend.onEvent?.(onSyncEvent);
   if (!photos.length) return;
   await show(0);
