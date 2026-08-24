@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/shaumik/qk-photo-viewer/internal/develop"
+
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 func touch(t *testing.T, path string) string {
@@ -94,7 +96,7 @@ func TestLockedCardFallsBackToAppSupport(t *testing.T) {
 	// A card with its lock switch on must still be editable.
 	dir := t.TempDir()
 	arw := touch(t, filepath.Join(dir, "DSC04810.ARW"))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 
 	s := New(dir, true)
 	want := develop.Edit{Exposure: -0.5, Highlights: -40}
@@ -114,7 +116,7 @@ func TestLockedCardFallsBackToAppSupport(t *testing.T) {
 func TestSidecarBesideThePhotoWinsOverTheBackup(t *testing.T) {
 	dir := t.TempDir()
 	arw := touch(t, filepath.Join(dir, "DSC04810.ARW"))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 
 	locked := New(dir, true)
 	locked.Set(arw, develop.Edit{Exposure: -2}) // written to the backup
@@ -134,7 +136,7 @@ func TestNestedFoldersDoNotCollideInTheBackup(t *testing.T) {
 	dir := t.TempDir()
 	a := touch(t, filepath.Join(dir, "100MSDCF", "DSC00001.ARW"))
 	b := touch(t, filepath.Join(dir, "101MSDCF", "DSC00001.ARW"))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 
 	s := New(dir, true)
 	s.Set(a, develop.Edit{Exposure: 1})

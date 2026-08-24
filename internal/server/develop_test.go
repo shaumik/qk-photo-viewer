@@ -19,6 +19,8 @@ import (
 	"github.com/shaumik/qk-photo-viewer/internal/preview/previewtest"
 	"github.com/shaumik/qk-photo-viewer/internal/tiff"
 	"github.com/shaumik/qk-photo-viewer/internal/tiff/tifftest"
+
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 /* ---------- fixtures ---------- */
@@ -567,7 +569,7 @@ func TestExportHonoursTheCrop(t *testing.T) {
 func TestLensCorrectionIsLearnedOnceAndReused(t *testing.T) {
 	// The whole point of the lens store: a lens distorts the same way
 	// every time, so fixing it on one frame should fix it on the next.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	dir := t.TempDir()
 	realARW(t, dir, "DSC00001")
 	realARW(t, dir, "DSC00002")
@@ -618,7 +620,7 @@ func TestAnUnidentifiableLensIsNeverLearned(t *testing.T) {
 	// Applying one lens's correction to another's photos is worse than
 	// applying none, so a photo that does not name its lens teaches
 	// nothing and inherits nothing.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	s, _ := openShoot(t)
 	info := developInfo(t, s, "DSC00002") // the JPEG-only fixture, no lens tags
 	if info.Lens != "" {
@@ -662,7 +664,7 @@ func TestSyncCopiesTheLookButNotTheFraming(t *testing.T) {
 	// A shoot developed one frame at a time looks like a shoot developed
 	// one frame at a time. Sync is what stops that being the only option —
 	// but where you cropped belongs to one photograph, not to the light.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	dir := t.TempDir()
 	for _, n := range []string{"DSC00001", "DSC00002", "DSC00003"} {
 		realARW(t, dir, n)
@@ -720,7 +722,7 @@ func TestSyncCopiesTheLookButNotTheFraming(t *testing.T) {
 func TestSyncIsOneEventForTheWholeShoot(t *testing.T) {
 	// Eight hundred frames must not be eight hundred messages to every
 	// connected screen.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	dir := t.TempDir()
 	for _, n := range []string{"DSC00001", "DSC00002", "DSC00003"} {
 		realARW(t, dir, n)

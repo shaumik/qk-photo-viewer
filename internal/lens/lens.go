@@ -20,6 +20,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 // Profile is what was learned about a lens at a focal length.
@@ -66,8 +68,8 @@ type Store struct {
 // with nowhere to write still works for the session; it just forgets.
 func Open() *Store {
 	s := &Store{byKey: map[string]Profile{}}
-	if root, err := os.UserConfigDir(); err == nil {
-		s.path = filepath.Join(root, "QK", "lenses.json")
+	if root, ok := fsutil.ConfigDir(); ok {
+		s.path = filepath.Join(root, "lenses.json")
 	}
 	s.load()
 	return s

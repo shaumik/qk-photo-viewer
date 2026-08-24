@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 func TestKeyIdentifiesALensAtAFocalLength(t *testing.T) {
@@ -31,7 +33,7 @@ func TestKeyIdentifiesALensAtAFocalLength(t *testing.T) {
 }
 
 func TestLearnsAndRemembersAcrossSessions(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	key := Key("E PZ 16-50mm F3.5-5.6 OSS", 16)
 
 	s := Open()
@@ -57,7 +59,7 @@ func TestLearnsAndRemembersAcrossSessions(t *testing.T) {
 func TestZeroProfileIsWorthRemembering(t *testing.T) {
 	// "This lens needs no correction" is a decision, and forgetting it
 	// would mean asking again on every shoot.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	key := Key("Sonnar T* FE 55mm F1.8 ZA", 55)
 	if err := Open().Set(key, Profile{}); err != nil {
 		t.Fatal(err)
@@ -72,7 +74,7 @@ func TestZeroProfileIsWorthRemembering(t *testing.T) {
 }
 
 func TestForgetRemovesAProfile(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	key := Key("zoom", 16)
 	s := Open()
 	s.Set(key, Profile{Distortion: 20})
@@ -91,7 +93,7 @@ func TestForgetRemovesAProfile(t *testing.T) {
 }
 
 func TestUnknownLensIsNeverRemembered(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	s := Open()
 	if err := s.Set("", Profile{Distortion: 50}); err != nil {
 		t.Fatal(err)
@@ -113,7 +115,7 @@ func TestCorruptAndFutureFilesAreIgnored(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("XDG_CONFIG_HOME", home)
+			t.Setenv(fsutil.ConfigDirEnv, home)
 			dir := filepath.Join(home, "QK")
 			os.MkdirAll(dir, 0o755)
 			os.WriteFile(filepath.Join(dir, "lenses.json"), []byte(body), 0o644)
@@ -125,7 +127,7 @@ func TestCorruptAndFutureFilesAreIgnored(t *testing.T) {
 }
 
 func TestOutOfRangeValuesAreClamped(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(fsutil.ConfigDirEnv, t.TempDir())
 	s := Open()
 	s.Set(Key("zoom", 16), Profile{Distortion: 5000, Vignette: math.NaN()})
 	p, _ := s.Get(Key("zoom", 16))

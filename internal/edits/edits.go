@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/shaumik/qk-photo-viewer/internal/develop"
+	"github.com/shaumik/qk-photo-viewer/internal/fsutil"
 )
 
 // Suffix is appended to a photo's base name to make its sidecar.
@@ -64,13 +65,13 @@ func New(dir string, readOnly bool) *Store {
 // support. The hash keeps two cards with the same folder name apart; the
 // readable prefix keeps the directory browsable by a human.
 func backupDir(dir string) string {
-	root, err := os.UserConfigDir()
-	if err != nil {
+	root, ok := fsutil.ConfigDir()
+	if !ok {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(dir))
 	name := sanitize(filepath.Base(dir)) + "-" + hex.EncodeToString(sum[:4])
-	return filepath.Join(root, "QK", "edits", name)
+	return filepath.Join(root, "edits", name)
 }
 
 func sanitize(s string) string {

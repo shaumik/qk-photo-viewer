@@ -8,6 +8,31 @@ import (
 	"strings"
 )
 
+// ConfigDirEnv relocates everything QK stores for itself — learned lens
+// profiles, and edits for cards it cannot write to.
+const ConfigDirEnv = "QK_CONFIG_DIR"
+
+// ConfigDir names the directory QK keeps its own state in, and reports
+// whether there is one at all. Callers must cope with there not being: a
+// session that cannot remember anything still has to work.
+//
+// It exists so that "where does QK store things" has a single answer that
+// does not vary by platform. os.UserConfigDir alone does not: it reads
+// XDG_CONFIG_HOME on Linux and ignores it on macOS, in favour of
+// $HOME/Library/Application Support. A test that points XDG_CONFIG_HOME at
+// a temporary directory is therefore isolated on one OS and, silently, on
+// the other, editing the real store belonging to whoever ran it.
+func ConfigDir() (string, bool) {
+	if dir := os.Getenv(ConfigDirEnv); dir != "" {
+		return filepath.Join(dir, "QK"), true
+	}
+	root, err := os.UserConfigDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(root, "QK"), true
+}
+
 // MoveInto renames src into destDir, creating destDir if needed. A name
 // collision in destDir gets a numeric suffix rather than overwriting.
 // Returns the final path of the moved file.
