@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/shaumik/qk-photo-viewer/internal/raw"
@@ -630,5 +631,117 @@ func TestEncodeJPEGSplicesExifAndStaysDecodable(t *testing.T) {
 func TestExifForMissingFile(t *testing.T) {
 	if seg := ExifFor(filepath.Join(t.TempDir(), "nope.ARW"), 100, 100); seg != nil {
 		t.Error("expected no segment for a missing file")
+	}
+}
+
+// lowKeyScene is a subject lit against a dark ground, shaped like the real
+// thing: a backdrop sitting a few percent above black covering `backdrop` of
+// the frame, and a subject occupying the range a subject actually occupies —
+// not up at clipping. That gap matters. If the subject is made bright enough
+// to hit the highlight ceiling, the ceiling caps the exposure and hides the
+// metering error underneath it.
+func lowKeyScene(w, h int, backdrop float64) *Scene {
+	pix := make([]float32, w*h*3)
+	// Fill from the bottom so the subject keeps its own shape as the
+	// backdrop grows.
+	subjectRows := int(float64(h) * (1 - backdrop))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			v := 0.006 // a black backdrop still reflects a little
+			if y >= h-subjectRows {
+				v = 0.10 + 0.21*float64(x)/float64(w-1)
+			}
+			for c := 0; c < 3; c++ {
+				pix[(y*w+x)*3+c] = float32(v)
+			}
+		}
+	}
+	return &Scene{W: w, H: h, Pix: pix, FromRAW: true}
+}
+
+// backdropStaysDark renders a scene and reports what fraction of it is still
+// near black — the thing a lifted low-key frame loses.
+func backdropStaysDark(s *Scene, e Edit) float64 {
+	img := Render(s, e)
+	dark, n := 0, 0
+	for i := 0; i < len(img.Pix); i += 4 {
+		if img.Pix[i] < 32 {
+			dark++
+		}
+		n++
+	}
+	return float64(dark) / float64(n)
+}
+
+func TestOrdinarySceneMetersOnItsMedian(t *testing.T) {
+	// The whole safety of the low-key rule is that it does nothing at all to
+	// a frame with ordinary shadows. If this drifts, every normal photo's
+	// exposure moves with it.
+	s := photoScene(160, 120, 0.05, 0.95, [3]float64{1, 1, 1})
+	small, n := sample(s)
+	kr, kg, kb := whiteBalance(Edit{})
+	lum := luminances(small, n, kr, kg, kb)
+	sort.Float64s(lum)
+
+	median := pct(lum, 0.5)
+	if got := meterPoint(lum); got != median {
+		t.Errorf("an evenly lit frame metered at %.5f, not its median %.5f", got, median)
+	}
+	if _, w := background(lum); w != 0 {
+		t.Errorf("an evenly lit frame read as %.2f low-key, want 0", w)
+	}
+}
+
+func TestSubjectOnABlackBackdropKeepsItsBlacks(t *testing.T) {
+	// Aiming the median of a mostly-black frame at middle grey hauls the
+	// backdrop up out of black: the black goes grey, its noise shows, and
+	// the subject blows. Exposure should stay near where the scene already
+	// is, and the shadow lift should stand down.
+	s := lowKeyScene(160, 120, 0.7)
+	small, n := sample(s)
+	kr, kg, kb := whiteBalance(Edit{})
+	lum := luminances(small, n, kr, kg, kb)
+	sort.Float64s(lum)
+
+	_, w := background(lum)
+	if w < 0.5 {
+		t.Fatalf("a frame that is mostly backdrop read as only %.2f low-key", w)
+	}
+	median, metered := pct(lum, 0.5), meterPoint(lum)
+	if metered <= median {
+		t.Errorf("metered at %.5f, no higher than the median %.5f it should be ignoring", metered, median)
+	}
+
+	e := Auto(s)
+	if e.Exposure > 0.75 {
+		t.Errorf("exposure %.2f stops on a frame that is already where it belongs", e.Exposure)
+	}
+	if e.Shadows > 5 {
+		t.Errorf("shadows lifted by %.1f on a deliberately dark frame", e.Shadows)
+	}
+	// The point of all of it: the backdrop is still a backdrop afterwards.
+	was := backdropStaysDark(s, Edit{})
+	now := backdropStaysDark(s, e)
+	if now < was*0.75 {
+		t.Errorf("auto turned %.0f%% of the frame from black to grey (%.0f%% dark before, %.0f%% after)",
+			100*(was-now), 100*was, 100*now)
+	}
+}
+
+func TestLowKeyJudgementHasNoCliff(t *testing.T) {
+	// Two frames a hair apart in how much backdrop they carry must not
+	// develop to visibly different exposures.
+	prev := math.Inf(-1)
+	for _, frac := range []float64{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8} {
+		s := lowKeyScene(160, 120, frac)
+		small, n := sample(s)
+		kr, kg, kb := whiteBalance(Edit{})
+		lum := luminances(small, n, kr, kg, kb)
+		sort.Float64s(lum)
+		_, w := background(lum)
+		if w < prev {
+			t.Errorf("backdrop %.1f read as %.2f low-key, less than the frame before it", frac, w)
+		}
+		prev = w
 	}
 }

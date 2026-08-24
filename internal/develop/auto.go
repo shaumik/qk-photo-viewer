@@ -48,7 +48,7 @@ func Auto(s *Scene) Edit {
 	kr, kg, kb := whiteBalance(e)
 	lum := luminances(small, n, kr, kg, kb)
 	sort.Float64s(lum)
-	mid := pct(lum, 0.5)
+	mid := meterPoint(lum)
 	high := pct(lum, 0.995)
 	const midTarget = 0.176 // linear value that lands near the middle of the display range
 	const highCeiling = 2.0 // a stop of overshoot, which the rolloff absorbs
@@ -79,9 +79,13 @@ func Auto(s *Scene) Edit {
 		over := math.Log2(p999)
 		e.Highlights = -clamp(over*55, 0, 100)
 	}
-	// Shadows: lift only if the dark end is genuinely closed up.
+	// Shadows: lift only if the dark end is genuinely closed up — and only
+	// if it was not closed up on purpose. On a frame lit against a dark
+	// ground the bottom tenth is the backdrop, and opening it up is undoing
+	// the photograph rather than rescuing it.
 	if d := srgbEncode(p10); d < 0.12 {
-		e.Shadows = clamp((0.12-d)*550, 0, 70)
+		_, lowKey := background(lum)
+		e.Shadows = clamp((0.12-d)*550, 0, 70) * (1 - lowKey)
 	}
 	// Blacks: a flat frame has nothing at true black — haze, or a lifted
 	// profile. Pulling the floor down is most of what makes it "pop".
@@ -113,6 +117,77 @@ func Auto(s *Scene) Edit {
 		e.Noise = noiseForISO(s.ISO)
 	}
 	return e.Clamp()
+}
+
+// How a dominant dark background is recognised and discounted.
+const (
+	// backgroundLevel is how far below the frame's own highlight a pixel has
+	// to sit before it reads as background rather than shadow: a twentieth,
+	// which is a bit over four stops down.
+	backgroundLevel = 0.05
+	// Ordinary scenes have shadows, and shadows are part of the picture. Only
+	// once the dark mass passes backgroundLots does the frame start to look
+	// deliberately low-key, and only at backgroundAll is it treated as one.
+	backgroundLots = 0.25
+	backgroundAll  = 0.50
+)
+
+// meterPoint is the luminance that exposure aims at the middle of the range.
+//
+// The obvious choice is the frame's median, and for an evenly lit scene it
+// is the right one. It fails on a photograph deliberately lit against a
+// dark ground — a subject on a black backdrop, a stage, a window at night.
+// There the histogram has two humps, the background one is the bigger, and
+// the median falls in the valley between them. Aiming that at middle grey
+// hauls the backdrop up out of black, which is the exact opposite of the
+// photograph: the black goes grey, the noise in it becomes visible, and the
+// subject blows out.
+//
+// So the background gets a vote proportional to how clearly it is one. A
+// frame with ordinary shadows meters exactly as before; a frame that is
+// mostly black meters on its subject; in between it slides smoothly, so no
+// photo lands on a cliff edge between two different exposures.
+func meterPoint(sorted []float64) float64 {
+	all := pct(sorted, 0.5)
+	dark, w := background(sorted)
+	if w <= 0 {
+		return all
+	}
+	// The median of what is left once the backdrop is set aside — the
+	// midpoint of the subject rather than of the frame.
+	subject := sorted[dark+(len(sorted)-dark)/2]
+	return all + w*(subject-all)
+}
+
+// background finds where the dark mass ends and how much the frame reads as
+// deliberately lit against it: 0 for a scene with ordinary shadows, 1 for one
+// that is mostly backdrop.
+func background(sorted []float64) (end int, weight float64) {
+	if len(sorted) < 16 {
+		return 0, 0
+	}
+	thr := backgroundLevel * pct(sorted, 0.995)
+	if thr <= 0 {
+		return 0, 0
+	}
+	end = sort.SearchFloat64s(sorted, thr)
+	frac := float64(end) / float64(len(sorted))
+	return end, smoothstep(backgroundLots, backgroundAll, frac)
+}
+
+// smoothstep ramps from 0 to 1 across [lo, hi] with no corner at either end.
+func smoothstep(lo, hi, x float64) float64 {
+	if hi <= lo {
+		return 0
+	}
+	t := (x - lo) / (hi - lo)
+	if t <= 0 {
+		return 0
+	}
+	if t >= 1 {
+		return 1
+	}
+	return t * t * (3 - 2*t)
 }
 
 // Grain becomes visible around ISO 800 on an APS-C sensor and doubles with

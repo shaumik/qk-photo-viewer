@@ -51,6 +51,13 @@ the picture rather than what it does to the numbers:
 
 Hold **Compare** to see what you started with. **`R`** puts it all back.
 
+It also knows when dark is the point. Shoot something lit against a black
+backdrop and most auto-exposure will drag the whole frame up until the
+black goes grey and the noise in it shows — because half the picture is
+dark, so it "must" be underexposed. QK checks whether that dark mass is a
+shadow or a backdrop, and if it's a backdrop it exposes for the subject and
+leaves the black alone.
+
 QK reads the ISO off the file and decides those last two for you. Grain and
 fine detail look the same to a histogram, but the camera wrote down which
 one it was — so a base-ISO frame gets sharpened properly, and an ISO 6400
