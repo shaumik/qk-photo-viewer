@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/shaumik/qk-photo-viewer/internal/tiff"
 )
@@ -50,9 +51,10 @@ type Image struct {
 	Black [4]float64
 	White float64
 
-	// WB are the as-shot white-balance multipliers for R, G and B,
-	// normalised so green is 1.
-	WB [3]float64
+	// WB are the white-balance multipliers for R, G and B, normalised so
+	// green is 1, and WBSource says where they came from.
+	WB       [3]float64
+	WBSource string
 
 	// CamToSRGB converts white-balanced camera RGB to linear sRGB,
 	// row-major.
@@ -156,7 +158,7 @@ func decodeTIFF(t *tiff.File, path string) (*Image, error) {
 	}
 
 	readLevels(t, d, im, bps, comp, curveDomain14)
-	im.WB = readWhiteBalance(t)
+	im.WB, im.WBSource = readWhiteBalance(t, im.Make)
 	im.CamToSRGB, im.Approximate = colorMatrix(t, im.Model)
 	cropActive(t, im)
 	return im, nil
@@ -185,11 +187,16 @@ func cropActive(t *tiff.File, im *Image) {
 		}
 	}
 	w, h = w&^1, h&^1 // keep the 2x2 filter block whole
-	// Only believe a crop that trims a margin. Anything more aggressive is
-	// a tag describing some other image in the file, not the sensor.
-	if w <= 0 || h <= 0 || w > im.Width || h > im.Height ||
-		w*10 < im.Width*9 || h*10 < im.Height*9 {
-		return
+	// Judge the axes separately. A camera set to shoot 16:9 reports a
+	// height that is a deliberate aspect crop rather than a sensor margin,
+	// and refusing the whole crop over it would leave the dead columns on
+	// the other axis in the picture. Only a trim is believed; anything
+	// more aggressive is a tag describing some other image in the file.
+	if w <= 0 || w > im.Width || w*10 < im.Width*9 {
+		w = im.Width
+	}
+	if h <= 0 || h > im.Height || h*10 < im.Height*9 {
+		h = im.Height
 	}
 	if w == im.Width && h == im.Height {
 		return
@@ -352,26 +359,47 @@ func firstInts(t *tiff.File, tags ...uint16) []int64 {
 	return nil
 }
 
-// readWhiteBalance returns the as-shot multipliers, normalised on green.
-// Sony stores per-CFA-position levels; DNG stores a neutral to divide by.
-func readWhiteBalance(t *tiff.File) [3]float64 {
-	neutral := [3]float64{1, 1, 1}
+// Where a frame's white balance came from.
+const (
+	WBFromCamera = "camera"  // the file said so
+	WBDefault    = "default" // a typical daylight balance for the make
+)
+
+// Sensors are far more sensitive to green than to red or blue, so raw
+// data with no white balance applied is violently green — not slightly
+// off, unusable. Some bodies publish their as-shot balance in a tag; the
+// a6000 and its generation bury it in an obfuscated maker-note block that
+// QK does not read. Rendering those with no balance at all is not an
+// option, so they start from a typical daylight balance for the make and
+// are corrected from there.
+var defaultWB = map[string][3]float64{
+	"SONY": {2.2, 1, 1.6},
+}
+
+var genericWB = [3]float64{2.0, 1, 1.7}
+
+// readWhiteBalance returns the as-shot multipliers, normalised on green,
+// and says whether they came from the file or from a default.
+func readWhiteBalance(t *tiff.File, make string) ([3]float64, string) {
 	if v := firstInts(t, tagSonyWBRGGB); len(v) >= 4 && v[1] > 0 {
 		g := float64(v[1]+v[2]) / 2
 		if g > 0 && v[0] > 0 && v[3] > 0 {
-			return [3]float64{float64(v[0]) / g, 1, float64(v[3]) / g}
+			return [3]float64{float64(v[0]) / g, 1, float64(v[3]) / g}, WBFromCamera
 		}
 	}
 	if v := firstInts(t, tagSonyWBGRBG); len(v) >= 4 {
 		g := float64(v[0]+v[3]) / 2
 		if g > 0 && v[1] > 0 && v[2] > 0 {
-			return [3]float64{float64(v[1]) / g, 1, float64(v[2]) / g}
+			return [3]float64{float64(v[1]) / g, 1, float64(v[2]) / g}, WBFromCamera
 		}
 	}
 	if v := t.AnyFloats(tiff.TagDNGAsShotNeutral); len(v) >= 3 && v[0] > 0 && v[1] > 0 && v[2] > 0 {
-		return [3]float64{v[1] / v[0], 1, v[1] / v[2]}
+		return [3]float64{v[1] / v[0], 1, v[1] / v[2]}, WBFromCamera
 	}
-	return neutral
+	if wb, ok := defaultWB[strings.ToUpper(strings.TrimSpace(make))]; ok {
+		return wb, WBDefault
+	}
+	return genericWB, WBDefault
 }
 
 // sonyToneCurve rebuilds the piecewise-linear curve the camera used when

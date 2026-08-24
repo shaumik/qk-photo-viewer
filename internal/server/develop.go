@@ -142,6 +142,7 @@ func sceneFor(p library.Photo) (*develop.Scene, error) {
 	if p.Raw != "" {
 		im, err := raw.Decode(p.Raw)
 		if err == nil {
+			learnWhiteBalance(im, p)
 			return develop.FromRAWImage(im, develop.PreviewMaxDim), nil
 		}
 		if !errors.Is(err, raw.ErrUnsupported) {
@@ -150,6 +151,41 @@ func sceneFor(p library.Photo) (*develop.Scene, error) {
 	}
 	return sceneFromPreview(displayFile(p), develop.PreviewMaxDim)
 }
+
+// learnWhiteBalance fills in a balance the file did not state, by asking
+// the camera's own rendering of the same frame what the answer looks like.
+//
+// Sensors are about twice as sensitive to green as to red or blue, so a
+// frame rendered with no balance at all is not slightly off — it is
+// violently green. Bodies of this generation hide the number they used in
+// an obfuscated maker-note block, but every one of them embeds a JPEG it
+// rendered itself, and that picture is the same answer written down in a
+// form anyone can read.
+//
+// The measured answer is only kept if it matches the camera better than
+// the default it would have replaced, so trying can never make a frame
+// worse than not trying.
+func learnWhiteBalance(im *raw.Image, p library.Photo) {
+	if im.WBSource != raw.WBDefault {
+		return
+	}
+	ref, err := preview.Preview(p.Raw)
+	if err != nil || len(ref) == 0 {
+		return
+	}
+	fitted, fitErr, ok := develop.FitWhiteBalance(im, ref)
+	if !ok {
+		return
+	}
+	if fitErr >= develop.ScoreWhiteBalance(im, ref, im.WB) {
+		return // the default already agreed with the camera at least as well
+	}
+	im.WB, im.WBSource = fitted, wbLearned
+}
+
+// wbLearned marks a balance measured against the camera's own rendering
+// rather than read from a tag.
+const wbLearned = "measured"
 
 func sceneFromPreview(file string, maxDim int) (*develop.Scene, error) {
 	data, err := preview.Preview(file)
@@ -175,6 +211,9 @@ func fullScene(p library.Photo) (*develop.Scene, error) {
 	if p.Raw != "" {
 		im, err := raw.Decode(p.Raw)
 		if err == nil {
+			// The same balance the preview was judged on, or an export
+			// would come out a different colour from what was approved.
+			learnWhiteBalance(im, p)
 			return develop.FromRAWImage(im, 0), nil
 		}
 		if !errors.Is(err, raw.ErrUnsupported) {
@@ -251,6 +290,10 @@ type DevelopInfo struct {
 	Width       int  `json:"width"`
 	Height      int  `json:"height"`
 
+	// WhiteBalance says where the frame's balance came from: the file, a
+	// default for the make, or measured against the camera's own preview.
+	WhiteBalance string `json:"whiteBalance,omitempty"`
+
 	// Lens names what took the shot, and LensLearned says a correction for
 	// it was already known and has been applied.
 	Lens        string `json:"lens,omitempty"`
@@ -276,6 +319,7 @@ func (s *Service) infoFor(p library.Photo, e develop.Edit) DevelopInfo {
 	}
 	info.Camera, info.Headroom = sc.Camera, sc.Headroom
 	info.ApproxColor, info.Width, info.Height = sc.ApproxColor, sc.W, sc.H
+	info.WhiteBalance = sc.WBSource
 	if name, focal := s.lensOf(p); name != "" {
 		info.Lens = name
 		if focal > 0 {

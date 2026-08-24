@@ -107,6 +107,22 @@ demosaic and your camera, lens and location metadata carried across.
 **⌘⇧E** does that for every keeper in the shoot. **⌘C** puts the photo on
 the clipboard to paste straight into a message.
 
+### Where the colour comes from
+
+A sensor sees about twice as much green as red or blue, so raw data with no
+white balance on it isn't slightly off — it's unusable. Most cameras write
+the balance they chose into a tag. Some, the a6000 among them, bury it in
+an obfuscated block QK doesn't read.
+
+So QK measures it instead. Every RAW carries a JPEG the camera rendered
+itself, with the right balance already in it — the answer, written down in
+the file, in a form anyone can read. QK finds the multipliers that make its
+rendering of the sensor data agree with the camera's rendering of the same
+scene, and keeps them only if they match better than the default would
+have. Trying can't make a frame worse than not trying.
+
+The panel tells you which happened.
+
 <sub>Sony ARW today: uncompressed and compressed. A file QK can't decode
 falls back to editing the camera's preview instead of refusing — the panel
 says which one you're working on, because the difference is real.</sub>

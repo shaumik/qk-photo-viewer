@@ -216,6 +216,13 @@
         note.textContent += ' Colour profile is a generic one for this make — ' +
           'colours are close, not exact.';
       }
+      if (info.whiteBalance === 'measured') {
+        note.textContent += ' This body hides its white balance, so QK measured' +
+          ' it against the camera\u2019s own preview.';
+      } else if (info.whiteBalance === 'default') {
+        note.textContent += ' White balance is a daylight default \u2014 this file' +
+          ' does not state one \u2014 so expect to move Warmth.';
+      }
       if (info.lens) {
         note.textContent += ` ${info.lens}` +
           (info.lensLearned ? ', corrections remembered from last time.' : '.');

@@ -89,16 +89,17 @@ func encodeARW2Group(v []int) []byte {
 }
 
 type fixture struct {
-	w, h        int
-	pixels      []int // 11-bit pre-curve samples, w*h
-	toneCurve   []int64
-	noSonyLevel bool
-	model       string
-	cropW       int
-	cropH       int
-	compression int64
-	bps         int64
-	rawBytes    []byte // overrides the ARW2 encoding when set
+	w, h           int
+	pixels         []int // 11-bit pre-curve samples, w*h
+	toneCurve      []int64
+	noSonyLevel    bool
+	model          string
+	cropW          int
+	cropH          int
+	compression    int64
+	noWhiteBalance bool
+	bps            int64
+	rawBytes       []byte // overrides the ARW2 encoding when set
 }
 
 func (fx fixture) write(t *testing.T) string {
@@ -137,8 +138,10 @@ func (fx fixture) write(t *testing.T) string {
 		Short(tiff.TagOrientation, 1).
 		Byte(tiff.TagCFAPattern, Red, Green, Green, Blue).
 		BlobOffset(tiff.TagStripOffsets, blob).
-		Long(tiff.TagStripByteCounts, int64(len(data))).
-		SShort(tagSonyWBRGGB, 2288, 1024, 1024, 1616)
+		Long(tiff.TagStripByteCounts, int64(len(data)))
+	if !fx.noWhiteBalance {
+		d.SShort(tagSonyWBRGGB, 2288, 1024, 1024, 1616)
+	}
 	if !fx.noSonyLevel {
 		d.Short(tagSonyBlack, 512, 512, 512, 512).Short(tagSonyWhite, 16300)
 	}
@@ -407,5 +410,57 @@ func TestCFAAccessors(t *testing.T) {
 		if got := im.BlackAt(c.x, c.y); got != c.black {
 			t.Errorf("BlackAt(%d,%d) = %v, want %v", c.x, c.y, got, c.black)
 		}
+	}
+}
+
+func TestMissingWhiteBalanceFallsBackRatherThanRenderingGreen(t *testing.T) {
+	// Sensors see about twice as much green as red or blue, so a frame with
+	// no balance applied is not slightly off, it is unusable. Bodies that
+	// hide the number they used must still start somewhere sensible.
+	fx := fixture{w: 64, h: 2, pixels: ramp(64, 2), noWhiteBalance: true}
+	im, err := Decode(fx.write(t))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if im.WBSource != WBDefault {
+		t.Errorf("WBSource = %q, want %q", im.WBSource, WBDefault)
+	}
+	if im.WB == [3]float64{1, 1, 1} {
+		t.Error("no balance at all was left in place")
+	}
+	if im.WB[1] != 1 {
+		t.Errorf("green should be the reference, got %v", im.WB[1])
+	}
+	if im.WB[0] < 1.3 || im.WB[0] > 3.5 || im.WB[2] < 1.1 || im.WB[2] > 3.5 {
+		t.Errorf("default balance %v is not a plausible daylight one", im.WB)
+	}
+
+	// And a file that does say gets believed instead.
+	stated, err := Decode(fixture{w: 64, h: 2, pixels: ramp(64, 2)}.write(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stated.WBSource != WBFromCamera {
+		t.Errorf("WBSource = %q, want %q", stated.WBSource, WBFromCamera)
+	}
+	if math.Abs(stated.WB[0]-2288.0/1024) > 1e-9 {
+		t.Errorf("stated balance = %v, want the file's own", stated.WB)
+	}
+}
+
+func TestCropJudgesEachAxisSeparately(t *testing.T) {
+	// A body set to shoot 16:9 reports a height that is a deliberate aspect
+	// crop, not a sensor margin. Refusing the whole crop over it would
+	// leave the dead columns on the other axis in the picture.
+	fx := fixture{w: 64, h: 40, pixels: ramp(64, 40), cropW: 60, cropH: 24}
+	im, err := Decode(fx.write(t))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if im.Width != 60 {
+		t.Errorf("width = %d, want the 60 the camera reported", im.Width)
+	}
+	if im.Height != 40 {
+		t.Errorf("height = %d, want the full 40: a 16:9 crop is not a margin", im.Height)
 	}
 }

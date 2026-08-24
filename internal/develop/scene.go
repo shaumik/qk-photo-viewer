@@ -46,6 +46,9 @@ type Scene struct {
 	// grain there is to deal with is a property of the capture, and the
 	// tag knows it more reliably than the pixels do.
 	ISO int
+	// WBSource records where the white balance came from, because "the
+	// camera told us" and "we worked it out" are worth telling apart.
+	WBSource string
 }
 
 // PreviewMaxDim bounds a Scene built for the screen. Big enough for a
@@ -73,7 +76,7 @@ func FromRAWImage(im *raw.Image, maxDim int) *Scene {
 	pix, w, h = orient(pix, w, h, im.Orientation)
 
 	s := &Scene{W: w, H: h, Pix: pix, FromRAW: true, ISO: im.ISO,
-		ApproxColor: im.Approximate, Camera: cameraName(im)}
+		ApproxColor: im.Approximate, Camera: cameraName(im), WBSource: im.WBSource}
 	s.Headroom = headroom(pix)
 	return s
 }

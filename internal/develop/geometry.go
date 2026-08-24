@@ -173,7 +173,7 @@ func applyGeometry(s *Scene, e Edit) *Scene {
 	out := &Scene{
 		W: wp.outW, H: wp.outH, Pix: make([]float32, wp.outW*wp.outH*3),
 		FromRAW: s.FromRAW, ApproxColor: s.ApproxColor,
-		Camera: s.Camera, Headroom: s.Headroom,
+		Camera: s.Camera, Headroom: s.Headroom, ISO: s.ISO, WBSource: s.WBSource,
 	}
 
 	rows := func(y0, y1 int) {
