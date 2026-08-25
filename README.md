@@ -89,6 +89,12 @@ the photo is going — 4:5 for a feed, 3:2 for a print, 16:9, square.
 **Straighten** levels a horizon and zooms just enough that no empty corner
 ever swings into view.
 
+Shoot at 16:9 and you get 16:9. The sensor is 3:2 whatever the camera is
+set to, so a body shooting wide records the whole thing and notes the
+picture you framed — QK develops the picture you framed. The rest of the
+frame is still there, and the crop tool shows all of it, so the spare
+strip is a decision rather than a loss.
+
 ![Crop and straighten](docs/screenshots/crop.png)
 
 Lens correction, straightening and the crop are one operation under the
@@ -129,6 +135,12 @@ scene, and keeps them only if they match better than the default would
 have. Trying can't make a frame worse than not trying.
 
 The panel tells you which happened.
+
+Once it knows, it stops guessing. Auto-develop will average a frame towards
+neutral when nobody has said what the light was — but a measurement beats an
+average, so a frame whose balance is known keeps it, and Warmth and Tint
+start at zero. Otherwise a room lit by one colour gets quietly argued out of
+being that colour.
 
 <sub>Sony ARW today: uncompressed and compressed. A file QK can't decode
 falls back to editing the camera's preview instead of refusing — the panel

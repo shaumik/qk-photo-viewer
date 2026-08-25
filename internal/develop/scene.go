@@ -49,6 +49,61 @@ type Scene struct {
 	// WBSource records where the white balance came from, because "the
 	// camera told us" and "we worked it out" are worth telling apart.
 	WBSource string
+
+	// Framing is the rectangle the photographer composed, as x, y, w, h in
+	// fractions of this Scene — the 16:9 a body was set to shoot, say,
+	// against a sensor that is 3:2 whatever you do. Being a fraction, it
+	// survives downscaling unchanged.
+	//
+	// It is the crop an edit starts from, not one already applied: the
+	// rest of the frame is still here, and the crop tool shows all of it.
+	Framing [4]float64
+}
+
+// FramingRect is the composed rectangle, defaulting to the whole frame.
+func (s *Scene) FramingRect() (x, y, w, h float64) {
+	if s.Framing[2] <= 0 || s.Framing[3] <= 0 {
+		return 0, 0, 1, 1
+	}
+	return s.Framing[0], s.Framing[1], s.Framing[2], s.Framing[3]
+}
+
+// CropOf is the rectangle to develop: what the edit asks for, or the
+// framing the camera recorded when the edit asks for nothing. Every path
+// that crops goes through here, so a preview, an export and a synced frame
+// cannot disagree about where the edges are.
+func (s *Scene) CropOf(e Edit) (x, y, w, h float64) {
+	if e.CropW > 0 && e.CropH > 0 {
+		return e.CropRect()
+	}
+	return s.FramingRect()
+}
+
+// orientRect turns a rectangle the same way orient turns the pixels.
+func orientRect(r [4]float64, o int) [4]float64 {
+	if o <= 1 || o > 8 || r[2] <= 0 || r[3] <= 0 {
+		return r
+	}
+	x, y, w, h := r[0], r[1], r[2], r[3]
+	// Work from the far edges too, since a flip turns one into the other.
+	x2, y2 := 1-x-w, 1-y-h
+	switch o {
+	case 2:
+		x = x2
+	case 3:
+		x, y = x2, y2
+	case 4:
+		y = y2
+	case 5:
+		x, y, w, h = y, x, h, w
+	case 6:
+		x, y, w, h = y2, x, h, w
+	case 7:
+		x, y, w, h = y2, x2, h, w
+	case 8:
+		x, y, w, h = y, x2, h, w
+	}
+	return [4]float64{x, y, w, h}
 }
 
 // PreviewMaxDim bounds a Scene built for the screen. Big enough for a
@@ -76,7 +131,8 @@ func FromRAWImage(im *raw.Image, maxDim int) *Scene {
 	pix, w, h = orient(pix, w, h, im.Orientation)
 
 	s := &Scene{W: w, H: h, Pix: pix, FromRAW: true, ISO: im.ISO,
-		ApproxColor: im.Approximate, Camera: cameraName(im), WBSource: im.WBSource}
+		ApproxColor: im.Approximate, Camera: cameraName(im), WBSource: im.WBSource,
+		Framing: orientRect(im.Framing, im.Orientation)}
 	s.Headroom = headroom(pix)
 	return s
 }
@@ -110,7 +166,10 @@ func FromJPEGBytes(data []byte, orientation int, maxDim int) (*Scene, error) {
 		pix, w, h = halve(pix, w, h)
 	}
 	pix, w, h = orient(pix, w, h, orientation)
-	return &Scene{W: w, H: h, Pix: pix}, nil
+	// The camera chose this frame's balance and baked it in. That is the
+	// same standing as a body that writes its choice into a tag, and it
+	// means nothing downstream should be second-guessing it.
+	return &Scene{W: w, H: h, Pix: pix, WBSource: raw.WBFromCamera}, nil
 }
 
 // Downscaled returns a smaller copy of the Scene, or the Scene itself if

@@ -67,6 +67,27 @@ type Image struct {
 	// ISO says how much grain to expect better than the pixels do, which
 	// is what decides how hard to denoise and how much to sharpen.
 	ISO int
+
+	// Framing is the rectangle the photographer actually composed, as
+	// x, y, w, h in fractions of the decoded frame. A body set to shoot
+	// 16:9 records the full sensor and states the narrower picture it was
+	// framed for; this is that picture. The zero value means the whole
+	// frame, so a camera that says nothing costs nothing.
+	//
+	// It is deliberately not applied to Data. Those rows are real
+	// exposure, and a crop that throws them away for good is not a crop
+	// QK gets to make on someone's behalf.
+	Framing [4]float64
+}
+
+// FramingRect returns the composed rectangle, defaulting to the whole
+// frame. Callers get a usable rectangle without each having to know that
+// the zero value is special.
+func (im *Image) FramingRect() (x, y, w, h float64) {
+	if im.Framing[2] <= 0 || im.Framing[3] <= 0 {
+		return 0, 0, 1, 1
+	}
+	return im.Framing[0], im.Framing[1], im.Framing[2], im.Framing[3]
 }
 
 // At returns the CFA colour of pixel (x, y).
@@ -187,25 +208,57 @@ func cropActive(t *tiff.File, im *Image) {
 		}
 	}
 	w, h = w&^1, h&^1 // keep the 2x2 filter block whole
-	// Judge the axes separately. A camera set to shoot 16:9 reports a
-	// height that is a deliberate aspect crop rather than a sensor margin,
-	// and refusing the whole crop over it would leave the dead columns on
-	// the other axis in the picture. Only a trim is believed; anything
-	// more aggressive is a tag describing some other image in the file.
-	if w <= 0 || w > im.Width || w*10 < im.Width*9 {
+
+	// The size the camera reports covers two different things, and they
+	// want opposite treatment. A few percent off an axis is the masked
+	// border, which is not picture and should go. A sixth off one axis is
+	// the photographer having set the camera to 16:9, which is picture,
+	// and is framing rather than margin.
+	//
+	// The same number separates them: a margin is a trim, a framing is a
+	// visible fraction of the frame. Anything smaller still on both axes
+	// is a tag describing some other image in the file, and is ignored.
+	if w <= 0 || w > im.Width {
 		w = im.Width
 	}
-	if h <= 0 || h > im.Height || h*10 < im.Height*9 {
+	if h <= 0 || h > im.Height {
 		h = im.Height
 	}
-	if w == im.Width && h == im.Height {
+	// No aspect a camera offers cuts an axis in half — 1:1 out of 16:9, the
+	// narrowest of them, keeps 56%. So a reported size below half the frame
+	// on either axis is not a framing of this picture at all; it is a tag
+	// describing some other image in the file, usually the preview, and
+	// nothing in it can be trusted.
+	if w*2 < im.Width || h*2 < im.Height {
 		return
 	}
-	out := make([]uint16, w*h)
-	for y := 0; y < h; y++ {
-		copy(out[y*w:(y+1)*w], im.Data[y*im.Width:y*im.Width+w])
+	trimW, frameW := split(w, im.Width)
+	trimH, frameH := split(h, im.Height)
+	if frameW < 1 || frameH < 1 {
+		// Centred, which is where every body puts an aspect crop.
+		im.Framing = [4]float64{(1 - frameW) / 2, (1 - frameH) / 2, frameW, frameH}
 	}
-	im.Data, im.Width, im.Height = out, w, h
+	if trimW == im.Width && trimH == im.Height {
+		return
+	}
+	out := make([]uint16, trimW*trimH)
+	for y := 0; y < trimH; y++ {
+		copy(out[y*trimW:(y+1)*trimW], im.Data[y*im.Width:y*im.Width+trimW])
+	}
+	im.Data, im.Width, im.Height = out, trimW, trimH
+}
+
+// split separates a reported size into the part that is a masked-border
+// trim and the part that is the photographer's framing. It returns the
+// size to crop to and the fraction of what remains that was composed.
+func split(want, have int) (trim int, frame float64) {
+	if want <= 0 || want >= have {
+		return have, 1
+	}
+	if want*10 >= have*9 {
+		return want, 1 // a trim: margin, not picture
+	}
+	return have, float64(want) / float64(have)
 }
 
 // findRawIFD picks the sensor image out of a file that also contains a
@@ -359,11 +412,19 @@ func firstInts(t *tiff.File, tags ...uint16) []int64 {
 	return nil
 }
 
-// Where a frame's white balance came from.
+// Where a frame's white balance came from. Two of these are answers and
+// one is a guess, which is a distinction worth keeping: what QK is
+// entitled to do next depends on whether the balance is known.
 const (
-	WBFromCamera = "camera"  // the file said so
-	WBDefault    = "default" // a typical daylight balance for the make
+	WBFromCamera = "camera"   // the file said so
+	WBMeasured   = "measured" // fitted against the camera's own rendering
+	WBDefault    = "default"  // a typical daylight balance for the make
 )
+
+// WBKnown reports whether a balance was established rather than assumed.
+func WBKnown(source string) bool {
+	return source == WBFromCamera || source == WBMeasured
+}
 
 // Sensors are far more sensitive to green than to red or blue, so raw
 // data with no white balance applied is violently green — not slightly

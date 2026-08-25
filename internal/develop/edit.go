@@ -133,9 +133,15 @@ func RenderInPlace(s *Scene, e Edit) *image.RGBA {
 // straightening applied, but the crop ignored. This is what the crop tool
 // draws on top of: you cannot choose where to cut if you can only see
 // what survived the last cut.
+//
+// "Uncropped" includes the camera's own framing. A body set to shoot 16:9
+// keeps the rest of the sensor, and those rows are as real as any other —
+// reaching them is the whole reason the crop tool shows the full frame.
 func RenderUncropped(s *Scene, e Edit) *image.RGBA {
 	e.CropX, e.CropY, e.CropW, e.CropH = 0, 0, 0, 0
-	return Render(s, e)
+	whole := *s
+	whole.Framing = [4]float64{}
+	return Render(&whole, e)
 }
 
 func render(s *Scene, e Edit, buf []float32) *image.RGBA {

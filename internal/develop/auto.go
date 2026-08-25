@@ -3,6 +3,8 @@ package develop
 import (
 	"math"
 	"sort"
+
+	"github.com/shaumik/qk-photo-viewer/internal/raw"
 )
 
 // Auto is the answer to "I don't know what any of these sliders do".
@@ -24,11 +26,24 @@ func Auto(s *Scene) Edit {
 	e := Edit{}
 
 	// --- Colour ---------------------------------------------------------
+	// Only when nobody has told us what the balance was.
+	//
 	// Averaging the frame under a p-norm sits between "the whole scene
 	// averages to grey" and "the brightest thing is white". Neither is true
-	// on its own; together they are right often enough, and the result is
-	// damped so a genuinely warm scene keeps its warmth.
+	// on its own; together they are right often enough to beat a guess.
+	//
+	// But they do not beat an answer. When the camera recorded the balance
+	// it chose, or QK measured it against the camera's own rendering, the
+	// question has been settled by evidence, and a grey-world average is a
+	// worse estimate laid on top of a better one — it drags a scene that is
+	// genuinely warm, or genuinely lit by one colour, towards a neutral it
+	// never had. On the frame this was found with, the measured balance sat
+	// 0.097 from the camera's own rendering and the nudge pushed it to
+	// 0.194: twice as far, in the name of helping.
 	mr, mg, mb := colorMeans(small, n)
+	if raw.WBKnown(s.WBSource) {
+		mr, mg, mb = 0, 0, 0 // settled; leave it alone
+	}
 	if mr > 1e-6 && mg > 1e-6 && mb > 1e-6 {
 		const damp = 0.75
 		// Multipliers that would neutralise the cast outright, pulled back

@@ -27,6 +27,9 @@
   let on = false;
   let rect = { x: 0, y: 0, w: 1, h: 1 };
   let frameW = 0, frameH = 0; // the corrected frame, in pixels
+  // The rectangle the camera was set to shoot, which is where a photo with
+  // no crop of its own starts. The whole frame unless a body says otherwise.
+  let camera = { x: 0, y: 0, w: 1, h: 1 };
   let aspect = 0;             // 0 free, else width over height in pixels
   let aspectLabel = '';       // what the user actually clicked
   let wrap, box, drag = null;
@@ -71,12 +74,20 @@
     }
   }
 
+  // originalAspect is the shape the photo was shot in, which is the
+  // camera's framing and not the sensor's. On a body framing the whole
+  // sensor the two are the same and this is frameW/frameH exactly.
+  function originalAspect() {
+    if (!frameW || !frameH) return 0;
+    return (camera.w * frameW) / (camera.h * frameH);
+  }
+
   // ratioName reduces the crop to the simplest ratio people recognise, and
   // falls back to the raw numbers when it is not a familiar one.
   function ratioName(w, h) {
     if (!w || !h) return '';
     for (const a of ASPECTS) {
-      const v = a.v === -1 ? frameW / frameH : a.v;
+      const v = a.v === -1 ? originalAspect() : a.v;
       if (v > 0 && Math.abs(w / h - v) < 0.01) return a.label === 'Original' ? 'original' : a.label;
     }
     return `${(w / h).toFixed(2)}:1`;
@@ -85,7 +96,7 @@
   // withAspect forces a rectangle to the locked ratio, growing or shrinking
   // whichever side the handle being dragged is not controlling.
   function withAspect(r, anchor) {
-    const target = aspect === -1 ? frameW / frameH : aspect;
+    const target = aspect === -1 ? originalAspect() : aspect;
     if (!target || !frameW || !frameH) return r;
     // Ratios are in pixels; the rectangle is normalised, so the frame's own
     // shape has to come out of the conversion.
@@ -227,14 +238,21 @@
       $('cropDone').onclick = () => this.toggle(false);
     },
 
-    // adopt takes the rectangle from an edit, and the shape of the frame it
-    // is measured against.
-    adopt(edit, w, h) {
+    // adopt takes the rectangle from an edit, the shape of the frame it is
+    // measured against, and the framing the camera itself was set to.
+    //
+    // With no crop of your own, the rectangle starts on the camera's
+    // framing rather than on the whole sensor: a shot composed at 16:9 was
+    // composed at 16:9, and offering the spare rows as the starting point
+    // would be handing back a picture nobody framed. They are still there
+    // to drag out to.
+    adopt(edit, w, h, framing) {
       frameW = w || frameW;
       frameH = h || frameH;
+      if (framing) camera = { x: framing[0], y: framing[1], w: framing[2], h: framing[3] };
       rect = (edit && edit.cropW > 0 && edit.cropH > 0)
         ? { x: edit.cropX, y: edit.cropY, w: edit.cropW, h: edit.cropH }
-        : { x: 0, y: 0, w: 1, h: 1 };
+        : { ...camera };
       layout();
     },
 
