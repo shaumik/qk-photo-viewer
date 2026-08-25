@@ -180,12 +180,8 @@ func learnWhiteBalance(im *raw.Image, p library.Photo) {
 	if fitErr >= develop.ScoreWhiteBalance(im, ref, im.WB) {
 		return // the default already agreed with the camera at least as well
 	}
-	im.WB, im.WBSource = fitted, wbLearned
+	im.WB, im.WBSource = fitted, raw.WBMeasured
 }
-
-// wbLearned marks a balance measured against the camera's own rendering
-// rather than read from a tag.
-const wbLearned = "measured"
 
 func sceneFromPreview(file string, maxDim int) (*develop.Scene, error) {
 	data, err := preview.Preview(file)
@@ -299,6 +295,13 @@ type DevelopInfo struct {
 	Lens        string `json:"lens,omitempty"`
 	LensLearned bool   `json:"lensLearned,omitempty"`
 
+	// Framing is the rectangle the camera was set to shoot — 16:9 on a
+	// sensor that is 3:2, say — as x, y, w, h against Width and Height.
+	// It is where the crop rectangle starts when there is no crop of your
+	// own, and what Reset goes back to. Absent when the body framed the
+	// whole sensor, which is the ordinary case.
+	Framing *[4]float64 `json:"framing,omitempty"`
+
 	// Synced counts the photos a sync just reached.
 	Synced int `json:"synced,omitempty"`
 }
@@ -320,6 +323,9 @@ func (s *Service) infoFor(p library.Photo, e develop.Edit) DevelopInfo {
 	info.Camera, info.Headroom = sc.Camera, sc.Headroom
 	info.ApproxColor, info.Width, info.Height = sc.ApproxColor, sc.W, sc.H
 	info.WhiteBalance = sc.WBSource
+	if x, y, w, h := sc.FramingRect(); w < 1 || h < 1 {
+		info.Framing = &[4]float64{x, y, w, h}
+	}
 	if name, focal := s.lensOf(p); name != "" {
 		info.Lens = name
 		if focal > 0 {

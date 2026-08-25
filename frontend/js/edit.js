@@ -260,7 +260,7 @@
     edit = { ...ZERO, ...info.edit };
     syncSliders();
     describe();
-    QKCrop.adopt(edit, info.width, info.height);
+    QKCrop.adopt(edit, info.width, info.height, info.framing);
     return loadFrame(p.id, 0);
   }
 
@@ -359,7 +359,7 @@
     leftAlone.add(photos[cur].id);
     edit = { ...ZERO };
     syncSliders();
-    QKCrop.adopt(edit, 0, 0);
+    QKCrop.adopt(edit, 0, 0, (info && info.framing) || null);
     showingBefore = false;
     if (mock()) { repaint(); return; }
     const p = photos[cur];

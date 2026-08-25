@@ -464,3 +464,55 @@ func TestCropJudgesEachAxisSeparately(t *testing.T) {
 		t.Errorf("height = %d, want the full 40: a 16:9 crop is not a margin", im.Height)
 	}
 }
+
+func TestAnAspectCropIsRememberedAndNotDestroyed(t *testing.T) {
+	// The rows outside a 16:9 framing are real exposure. Knowing the
+	// picture was composed at 16:9 is worth having; throwing the rest away
+	// on the photographer's behalf is not ours to do.
+	fx := fixture{w: 64, h: 40, pixels: ramp(64, 40), cropW: 60, cropH: 24}
+	im, err := Decode(fx.write(t))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	x, y, w, h := im.FramingRect()
+	if w != 1 {
+		t.Errorf("framing width %v, want the full width — only the height was cropped", w)
+	}
+	if got := float64(im.Height) * h; math.Abs(got-24) > 0.5 {
+		t.Errorf("framed height %v, want the 24 the camera reported", got)
+	}
+	if x != 0 || math.Abs(y-(1-h)/2) > 1e-9 {
+		t.Errorf("framing origin (%v,%v) is not centred", x, y)
+	}
+	// And the frame itself still holds every row.
+	if im.Height != 40 {
+		t.Errorf("height %d: the spare rows were destroyed", im.Height)
+	}
+}
+
+func TestAMarginTrimIsNotAFraming(t *testing.T) {
+	// The other half of the same tag. A few percent off an axis is the
+	// masked border: it goes, and it must not come back as a rectangle you
+	// could drag out to, because there is no picture out there.
+	fx := fixture{w: 64, h: 20, pixels: ramp(64, 20), cropW: 60, cropH: 18}
+	im, err := Decode(fx.write(t))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if _, _, w, h := im.FramingRect(); w != 1 || h != 1 {
+		t.Errorf("a margin trim left a framing of %vx%v, want the whole frame", w, h)
+	}
+}
+
+func TestAPreviewSizedTagLeavesNoFraming(t *testing.T) {
+	// A tag describing another image in the file must not be mistaken for
+	// a framing any more than for an active area.
+	fx := fixture{w: 64, h: 8, pixels: ramp(64, 8), cropW: 16, cropH: 4}
+	im, err := Decode(fx.write(t))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if _, _, w, h := im.FramingRect(); w != 1 || h != 1 {
+		t.Errorf("a preview's dimensions became a framing of %vx%v", w, h)
+	}
+}

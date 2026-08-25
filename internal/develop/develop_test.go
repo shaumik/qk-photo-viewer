@@ -745,3 +745,100 @@ func TestLowKeyJudgementHasNoCliff(t *testing.T) {
 		prev = w
 	}
 }
+
+// framedScene is a Scene carrying a camera framing, as a 16:9 window on a
+// 3:2 frame.
+func framedScene(w, h int) *Scene {
+	s := photoScene(w, h, 0.1, 0.8, [3]float64{1, 1, 1})
+	fh := (float64(w) / (16.0 / 9)) / float64(h)
+	s.Framing = [4]float64{0, (1 - fh) / 2, 1, fh}
+	return s
+}
+
+func TestAFrameIsDevelopedAsItWasComposed(t *testing.T) {
+	// A body set to shoot 16:9 records the whole sensor. Showing the full
+	// sensor back is not the picture that was framed.
+	s := framedScene(320, 213)
+	img := Render(s, Edit{})
+	got := float64(img.Bounds().Dx()) / float64(img.Bounds().Dy())
+	if math.Abs(got-16.0/9) > 0.03 {
+		t.Errorf("developed at %.3f:1, want the 16:9 it was shot at", got)
+	}
+}
+
+func TestYourOwnCropOverridesTheCameras(t *testing.T) {
+	s := framedScene(320, 213)
+	e := Edit{CropX: 0, CropY: 0, CropW: 0.5, CropH: 1}
+	img := Render(s, e)
+	if w := img.Bounds().Dx(); math.Abs(float64(w)-160) > 2 {
+		t.Errorf("width %d, want the 160 the edit asked for", w)
+	}
+	if h := img.Bounds().Dy(); math.Abs(float64(h)-213) > 2 {
+		t.Errorf("height %d: a crop of your own replaces the framing, it does not stack with it", h)
+	}
+}
+
+func TestTheCropToolCanSeePastTheFraming(t *testing.T) {
+	// The spare rows are reachable or the framing is just a destructive
+	// crop wearing a different name.
+	s := framedScene(320, 213)
+	full := RenderUncropped(s, Edit{})
+	if full.Bounds().Dy() != 213 {
+		t.Errorf("uncropped height %d, want the whole %d-row frame", full.Bounds().Dy(), 213)
+	}
+	if framed := Render(s, Edit{}).Bounds().Dy(); framed >= full.Bounds().Dy() {
+		t.Errorf("framed render is %d rows, no smaller than the uncropped %d",
+			framed, full.Bounds().Dy())
+	}
+}
+
+func TestNoFramingCostsNothing(t *testing.T) {
+	// The ordinary case — a body that framed the whole sensor — must come
+	// out byte for byte as it did before any of this existed.
+	s := photoScene(160, 106, 0.1, 0.8, [3]float64{1, 1, 1})
+	if s.movesPixels(Edit{}) {
+		t.Error("a frame with no framing and no crop wants a resample")
+	}
+	img := Render(s, Edit{})
+	if img.Bounds().Dx() != 160 || img.Bounds().Dy() != 106 {
+		t.Errorf("rendered %dx%d, want the frame untouched", img.Bounds().Dx(), img.Bounds().Dy())
+	}
+}
+
+func TestAutoDoesNotSecondGuessAKnownBalance(t *testing.T) {
+	// A grey-world average is a good guess and a bad correction to a
+	// measurement. When the balance is known, the same frame must come back
+	// with the colour sliders untouched — and when it is not, the guess is
+	// still worth having.
+	cast := [3]float64{1.35, 1.0, 0.7}
+	for _, src := range []string{raw.WBFromCamera, raw.WBMeasured} {
+		s := photoScene(64, 64, 0.15, 0.85, cast)
+		s.WBSource = src
+		if e := Auto(s); e.Temp != 0 || e.Tint != 0 {
+			t.Errorf("%s: auto moved colour to temp=%v tint=%v over a balance already established",
+				src, e.Temp, e.Tint)
+		}
+	}
+	guessed := photoScene(64, 64, 0.15, 0.85, cast)
+	guessed.WBSource = raw.WBDefault
+	if e := Auto(guessed); e.Temp >= 0 {
+		t.Errorf("temp = %v, want the guess still corrected when nothing measured it", e.Temp)
+	}
+}
+
+func TestACameraJPEGCarriesTheCamerasOwnBalance(t *testing.T) {
+	// The camera balanced this frame and baked it in, which is the same
+	// standing as a body that writes its choice into a tag.
+	s := flatScene(8, 8, 0.4, 0.4, 0.4)
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, Render(s, Edit{}), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := FromJPEGBytes(b.Bytes(), 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !raw.WBKnown(got.WBSource) {
+		t.Errorf("a camera rendering came back with balance source %q, want a known one", got.WBSource)
+	}
+}

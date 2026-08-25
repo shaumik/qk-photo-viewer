@@ -55,6 +55,14 @@ func (e Edit) HasGeometry() bool {
 		x != 0 || y != 0 || w != 1 || h != 1
 }
 
+// movesPixels is HasGeometry for a particular Scene, which may carry a
+// framing the edit does not mention.
+func (s *Scene) movesPixels(e Edit) bool {
+	x, y, w, h := s.CropOf(e)
+	return e.Distortion != 0 || e.Vignette != 0 || e.Rotate != 0 ||
+		x != 0 || y != 0 || w != 1 || h != 1
+}
+
 // warp is the composed map from output pixel to source pixel, built once
 // per render and then evaluated a few million times.
 type warp struct {
@@ -72,7 +80,7 @@ type warp struct {
 }
 
 func newWarp(s *Scene, e Edit) *warp {
-	x, y, w, h := e.CropRect()
+	x, y, w, h := s.CropOf(e)
 	rad := e.Rotate * math.Pi / 180
 	wp := &warp{
 		srcW: s.W, srcH: s.H,
@@ -166,7 +174,7 @@ func fitScale(wp *warp) float64 {
 // and cropped. The Scene it returns is a new one; the original is left
 // alone because it is the cached, edit-independent version.
 func applyGeometry(s *Scene, e Edit) *Scene {
-	if !e.HasGeometry() || s.W < 2 || s.H < 2 {
+	if !s.movesPixels(e) || s.W < 2 || s.H < 2 {
 		return s
 	}
 	wp := newWarp(s, e)
@@ -174,6 +182,7 @@ func applyGeometry(s *Scene, e Edit) *Scene {
 		W: wp.outW, H: wp.outH, Pix: make([]float32, wp.outW*wp.outH*3),
 		FromRAW: s.FromRAW, ApproxColor: s.ApproxColor,
 		Camera: s.Camera, Headroom: s.Headroom, ISO: s.ISO, WBSource: s.WBSource,
+		// The framing has been applied; what comes out is the picture.
 	}
 
 	rows := func(y0, y1 int) {
